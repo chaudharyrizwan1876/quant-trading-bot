@@ -1,0 +1,39 @@
+# ============================================================
+#  .gitignore — GoldBot
+#  Sensitive data aur auto-generated files GitHub par nahi jani chahiye
+# ============================================================
+
+# --- Sensitive: MT5 login/password/server ---
+config.py
+
+# --- Logs, trade history, news cache (auto-generated) ---
+data/
+*.csv
+*.log
+
+# --- Python cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# --- Virtual environment (agar banaya ho) ---
+venv/
+env/
+.venv/
+
+# --- OS junk files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor/IDE settings ---
+.vscode/
+.idea/
+*.swp
+
+# --- Trade memory (personal trading data) ---
+trade_memory.json
+data/trade_memory.json
+data/news_cache.json

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoldBot Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:       #0a0c10;
+    --surface:  #111520;
+    --border:   #1e2535;
+    --gold:     #f0b429;
+    --gold-dim: #7a5c14;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --blue:     #3b82f6;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--gold), #c8860a);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .logo-text span { color: var(--gold); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+  }
+
+  .pulse {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(1.3); }
+  }
+
+  #last-update {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── Layout ── */
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* ── Account Bar ── */
+  .account-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .acc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+  }
+
+  .acc-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .acc-value {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 600;
+  }
+
+  .acc-value.gold  { color: var(--gold); }
+  .acc-value.green { color: var(--green); }
+  .acc-value.neg   { color: var(--red); }
+
+  /* ── Prices ── */
+  .prices-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .price-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .price-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--gold);
+    opacity: 0.4;
+  }
+
+  .price-symbol {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+
+  .price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .price-lbl { font-size: 10px; color: var(--muted); }
+
+  .price-val {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .price-bid { color: var(--red); }
+  .price-ask { color: var(--green); }
+
+  /* ── Section Header ── */
+  .section-hdr {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .section-hdr h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+  }
+
+  .badge {
+    background: var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* ── Tables ── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead tr {
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 11px 16px;
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  td {
+    padding: 12px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid #151a24;
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr:hover td { background: #141824; }
+
+  .td-mono { font-family: var(--mono); font-size: 12px; }
+
+  .tag {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .tag-buy  { background: #14532d; color: var(--green); }
+  .tag-sell { background: #450a0a; color: var(--red);   }
+
+  .profit-pos { color: var(--green); font-family: var(--mono); font-weight: 600; }
+  .profit-neg { color: var(--red);   font-family: var(--mono); font-weight: 600; }
+  .profit-zero{ color: var(--muted); font-family: var(--mono); }
+
+  .empty-row td {
+    text-align: center;
+    color: var(--muted);
+    padding: 32px;
+    font-style: italic;
+  }
+
+  /* ── Loading ── */
+  #loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--muted);
+    gap: 12px;
+    font-family: var(--mono);
+  }
+
+  .spin {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Comment pill ── */
+  .comment-pill {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--muted);
+    background: #1a1f2e;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+    display: inline-block;
+  }
+
+  /* ── Flash animation on update ── */
+  @keyframes flash {
+    0%   { background: #1e2a1e; }
+    100% { background: transparent; }
+  }
+
+  .flash td { animation: flash 0.6s ease; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">📈</div>
+    <div class="logo-text">Gold<span>Bot</span> Dashboard</div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="pulse"></div>
+      LIVE
+    </div>
+    <div id="last-update">Loading...</div>
+  </div>
+</header>
+
+<main id="loading">
+  <div class="spin"></div>
+  MT5 se data le raha hoon...
+</main>
+
+<script>
+let prevOpenIds = new Set();
+
+async function fetchData() {
+  try {
+    const res  = await fetch('/api/data');
+    const data = await res.json();
+    renderDashboard(data);
+    document.getElementById('last-update').textContent =
+      'Last update: ' + data.timestamp;
+  } catch(e) {
+    document.getElementById('last-update').textContent =
+      'Connection error — retry...';
+  }
+}
+
+function pClass(val) {
+  if (val > 0)  return 'profit-pos';
+  if (val < 0)  return 'profit-neg';
+  return 'profit-zero';
+}
+
+function pSign(val) {
+  return (val > 0 ? '+' : '') + val.toFixed(2);
+}
+
+function renderDashboard(d) {
+  const main = document.getElementById('loading') ||
+               document.querySelector('main');
+
+  // Build HTML
+  let html = '';
+
+  // ── Account Bar ──
+  const profitClass = d.profit >= 0 ? 'green' : 'neg';
+  html += `
+  <div class="account-bar">
+    <div class="acc-card">
+      <div class="acc-label">Account Balance</div>
+      <div class="acc-value gold">$${d.balance.toLocaleString('en', {minimumFractionDigits:2})}</div>
+    </div>
+    <div class="acc-card">
+      <div class="acc-label">Equity</div>
+      <div class="acc-value gold">$${d.equity.toLocaleString('en', {minimumFractionDigits:2})}</div>
+    </div>
+    <div class="acc-card">
+      <div class="acc-label">Open P&L</div>
+      <div class="acc-value ${profitClass}">${pSign(d.profit)}</div>
+    </div>
+  </div>`;
+
+  // ── Live Prices ──
+  html += `<div>
+    <div class="section-hdr"><h2>Live Prices</h2></div>
+    <div class="prices-grid">`;
+
+  const symbols = ['XAUUSDm','EURUSDm','GBPUSDm','USDJPYm','AUDUSDm','USDCADm'];
+  for (const sym of symbols) {
+    const p       = d.prices[sym];
+    const isGold  = sym === 'XAUUSDm';
+    html += `<div class="price-card" style="${isGold ? 'border-color:var(--gold);' : ''}">
+      <div class="price-symbol" style="${isGold ? 'color:var(--gold);' : ''}">${sym}${isGold ? ' ⭐' : ''}</div>`;
+    if (p) {
+      html += `
+      <div class="price-row">
+        <span class="price-lbl">BID</span>
+        <span class="price-val price-bid">${p.bid}</span>
+      </div>
+      <div class="price-row">
+        <span class="price-lbl">ASK</span>
+        <span class="price-val price-ask">${p.ask}</span>
+      </div>`;
+    } else {
+      html += `<div style="color:var(--muted);font-size:12px;margin-top:8px">No data</div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+
+  // ── Open Trades ──
+  const openCount = d.open.length;
+  html += `<div>
+    <div class="section-hdr">
+      <h2>Open Trades</h2>
+      <span class="badge">${openCount}</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Ticket</th><th>Symbol</th><th>Type</th>
+        <th>Lot</th><th>Entry</th><th>Current</th>
+        <th>SL</th><th>TP</th><th>P&L</th>
+        <th>Open Time (PKT)</th><th>Strategy</th>
+      </tr></thead>
+      <tbody>`;
+
+  if (openCount === 0) {
+    html += `<tr class="empty-row"><td colspan="11">Koi open trade nahi hai</td></tr>`;
+  } else {
+    for (const t of d.open) {
+      const isNew = !prevOpenIds.has(t.ticket);
+      const cls   = isNew ? 'flash' : '';
+      html += `<tr class="${cls}">
+        <td class="td-mono">#${t.ticket}</td>
+        <td><b>${t.symbol}</b></td>
+        <td><span class="tag tag-${t.type.toLowerCase()}">${t.type}</span></td>
+        <td class="td-mono">${t.lot}</td>
+        <td class="td-mono">${t.entry}</td>
+        <td class="td-mono">${t.current}</td>
+        <td class="td-mono" style="color:var(--red)">${t.sl}</td>
+        <td class="td-mono" style="color:var(--green)">${t.tp}</td>
+        <td class="${pClass(t.profit)}">${pSign(t.profit)}</td>
+        <td class="td-mono" style="font-size:11px">${t.open_time}</td>
+        <td><span class="comment-pill">${t.comment}</span></td>
+      </tr>`;
+    }
+  }
+
+  html += `</tbody></table></div></div>`;
+  prevOpenIds = new Set(d.open.map(t => t.ticket));
+
+  // ── Trade History ──
+  const histCount = d.history.length;
+  html += `<div>
+    <div class="section-hdr">
+      <h2>Trade History</h2>
+      <span class="badge">${histCount}</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Ticket</th><th>Symbol</th><th>Type</th>
+        <th>Lot</th><th>Entry</th><th>Close</th>
+        <th>P&L</th>
+        <th>Open Time (PKT)</th><th>Close Time (PKT)</th>
+        <th>Strategy</th>
+      </tr></thead>
+      <tbody>`;
+
+  if (histCount === 0) {
+    html += `<tr class="empty-row"><td colspan="10">Koi trade history nahi</td></tr>`;
+  } else {
+    for (const t of d.history) {
+      html += `<tr>
+        <td class="td-mono">#${t.ticket}</td>
+        <td><b>${t.symbol}</b></td>
+        <td><span class="tag tag-${t.type.toLowerCase()}">${t.type}</span></td>
+        <td class="td-mono">${t.lot}</td>
+        <td class="td-mono">${t.entry}</td>
+        <td class="td-mono">${t.close}</td>
+        <td class="${pClass(t.profit)}">${pSign(t.profit)}</td>
+        <td class="td-mono" style="font-size:11px">${t.open_time}</td>
+        <td class="td-mono" style="font-size:11px">${t.close_time}</td>
+        <td><span class="comment-pill">${t.comment}</span></td>
+      </tr>`;
+    }
+  }
+
+  html += `</tbody></table></div></div>`;
+
+  // Inject
+  main.id        = '';
+  main.innerHTML = html;
+  main.className = '';
+  main.tagName !== 'MAIN' && (main.outerHTML = `<main>${html}</main>`);
+
+  // Replace entire main
+  document.querySelector('main').innerHTML = html;
+}
+
+// Auto-refresh har 5 second
+fetchData();
+setInterval(fetchData, 5000);
+</script>
+</body>
+</html>
