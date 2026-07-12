@@ -1,4 +1,4 @@
-# GoldBot — Automated Trading Bot (MT5)
+# GoldBot : Automated Trading Bot (MT5)
 
 Python-based automated trading bot for **MetaTrader 5**, trading **Gold (XAUUSDm)** and **Forex pairs** (EUR/GBP/JPY/AUD/CAD) using a mix of custom Liquidity Sweep, ICT/SMC (Order Blocks, FVG, BOS/CHOCH), and AMD (Accumulation-Manipulation-Distribution) strategies — plus live news filtering, dynamic risk-based lot sizing, and a web dashboard.
 
