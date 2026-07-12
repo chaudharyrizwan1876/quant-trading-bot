@@ -58,7 +58,7 @@ gold_bot/
    ```
 4. Run the bot:
    ```bash
-   python main.py
+   python main.py or py main.py
    ```
 5. (Optional) Run the dashboard in a separate terminal:
    ```bash
