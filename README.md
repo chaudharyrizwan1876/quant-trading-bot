@@ -1,80 +1,180 @@
-# GoldBot : Automated Trading Bot (MT5)
+# Quant Trading Bot
 
-Python-based automated trading bot for **MetaTrader 5**, trading **Gold (XAUUSDm)** and **Forex pairs** (EUR/GBP/JPY/AUD/CAD) using a mix of custom Liquidity Sweep, ICT/SMC (Order Blocks, FVG, BOS/CHOCH), and AMD (Accumulation-Manipulation-Distribution) strategies — plus live news filtering, dynamic risk-based lot sizing, and a web dashboard.
+Python-based algorithmic trading engine for **MetaTrader 5 (MT5)** that trades **Gold (XAUUSD)** and **Forex pairs** using a combination of custom Liquidity Sweep, Smart Money Concepts (SMC), ICT concepts, AMD (Accumulation-Manipulation-Distribution), and advanced risk management. The project is designed with an AI-ready architecture for future machine learning integration.
 
-⚠️ **Disclaimer:** This is an experimental trading bot for educational/demo purposes. Trading involves real financial risk. Use on a demo account first. Not financial advice.
-
----
-
-## Features
-
-- **Gold Strategy** (`strategy_gold.py`) — H1/M30 trend, M15 zones, ATR-based SL, session-aware
-- **ICT/SMC Strategy** (`strategy_ict.py`) — Order Blocks, FVG, Break-and-Retest, Kill Zones
-- **AMD Strategy** (`strategy_amd.py`) — Standalone Accumulation-Manipulation-Distribution pattern
-- **Dynamic Risk Management** (`risk_manager.py`) — Equity-based 1% risk per trade, correlation filter, daily loss limit, spread filter
-- **News Filter** (`news_reader.py`) — Forex Factory high-impact news pause/trade logic
-- **Trade Management** (`trade_manager.py`) — Break-even, partial close, SL trailing, weekend auto-close
-- **Trade Memory** (`trade_memory.py`) — Blocks patterns/symbols after repeated losses
-- **Live Dashboard** (`dashboard/`) — Web UI showing live prices, open trades, and history
+> ⚠️ **Disclaimer:** This project is intended for educational, research, and demo purposes. Trading financial markets involves significant risk. Always test on a demo account before using real funds. This is **not financial advice**.
 
 ---
 
-## Project Structure
+# Features
 
-```
-gold_bot/
-├── main.py                # Entry point — runs the bot loop
-├── config.py               # All settings (risk %, sessions, symbols, etc.)
-├── mt5_connector.py         # MT5 connection, orders, candle data
-├── strategy_gold.py         # Gold strategy
-├── strategy_ict.py          # ICT/SMC strategy (Forex)
-├── strategy_amd.py          # Standalone AMD strategy
-├── indicators.py            # BOS/CHOCH, Order Blocks, FVG helpers
-├── risk_manager.py          # Lot sizing, correlation, daily loss limit
-├── trade_manager.py         # BE/trail/partial-close/weekend-close
-├── trade_memory.py          # Pattern/symbol loss-blocking memory
-├── news_reader.py           # Forex Factory news fetch + caching
-├── logger.py                # Logging to console + CSV
+* **Gold Strategy** (`strategy_gold.py`) — Multi-timeframe trend analysis, ATR-based Stop Loss, session-aware execution.
+* **Silver Bullet Strategy** (`strategy_silver_bullet.py`) — ICT Silver Bullet session-based trading logic.
+* **AMD Strategy** (`strategy_amd.py`) — Accumulation-Manipulation-Distribution pattern detection.
+* **Dynamic Risk Management** (`risk_manager.py`) — Equity-based risk calculation, spread filter, daily loss limits, and correlation filtering.
+* **News Filter** (`news_reader.py`) — Economic news filtering to avoid high-impact events.
+* **Trade Management** (`trade_manager.py`) — Automatic Break Even, Trailing Stop, Partial Close, and intelligent trade management.
+* **Trade Memory** (`trade_memory.py`) — Learns from repeated losing conditions to avoid similar low-probability setups.
+* **Live Dashboard** (`dashboard/`) — Local dashboard for monitoring trades and market activity.
+* **AI-Ready Architecture** — Modular design prepared for future AI and machine learning integration.
+
+---
+
+# Project Structure
+
+```text
+quant-trading-bot/
+├── main.py
+├── config.py
+├── config.example.py
+├── mt5_connector.py
+├── strategy_gold.py
+├── strategy_silver_bullet.py
+├── strategy_amd.py
+├── indicators.py
+├── risk_manager.py
+├── trade_manager.py
+├── trade_memory.py
+├── news_reader.py
+├── logger.py
 ├── dashboard/
-│   ├── dashboard.py         # Local web server (Flask-free, stdlib)
-│   └── dashboard.html       # Live dashboard UI
-└── data/                    # Logs, trade history, news cache (gitignored)
+│   ├── dashboard.py
+│   └── dashboard.html
+├── backtesting/
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## Setup
+# Installation
 
-1. Install Python 3.10+ and MetaTrader 5 (Windows).
-2. Install dependencies:
-   ```bash
-   pip install MetaTrader5 pandas
-   ```
-3. Copy `config.example.py` to `config.py` and fill in your MT5 login details:
-   ```python
-   MT5_LOGIN    = "YOUR_ACCOUNT_NUMBER"
-   MT5_PASSWORD = "YOUR_PASSWORD"
-   MT5_SERVER   = "YOUR_BROKER_SERVER"
-   ```
-4. Run the bot:
-   ```bash
-   python main.py or py main.py
-   ```
-5. (Optional) Run the dashboard in a separate terminal:
-   ```bash
-   cd dashboard
-   python dashboard.py
-   ```
-   Then open `http://localhost:5000` in your browser.
+## 1. Install Python
+
+Install **Python 3.10 or later**.
+
+## 2. Install MetaTrader 5
+
+Install MetaTrader 5 and log in to your trading account (Demo recommended).
+
+## 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## 4. Configure the Bot
+
+Copy:
+
+```text
+config.example.py
+```
+
+to:
+
+```text
+config.py
+```
+
+Then update your MT5 credentials and bot configuration.
+
+## 5. Run the Bot
+
+Linux/macOS:
+
+```bash
+python main.py
+```
+
+Windows:
+
+```bash
+py main.py
+```
+
+## 6. Run Dashboard (Optional)
+
+```bash
+cd dashboard
+python dashboard.py
+```
+
+Then open:
+
+```text
+http://localhost:5000
+```
 
 ---
 
-## ⚠️ Security Note
+# Risk Management
 
-`config.py` contains your **MT5 login, password, and server** in plain text. This file is listed in `.gitignore` and must **never** be committed to GitHub. If you've already committed it, rotate your MT5 password immediately and remove it from git history (see below).
+The bot supports advanced risk management features including:
+
+* Dynamic lot sizing
+* Configurable account risk
+* Maximum daily loss protection
+* Spread filtering
+* Session filtering
+* Break Even automation
+* Partial profit taking
+* Intelligent trade management
 
 ---
 
-## License
+# Supported Markets
 
-Private/personal project — no license granted for redistribution.
+* Gold (XAUUSD)
+* Major Forex pairs
+* Additional symbols can be added through configuration.
+
+---
+
+# Roadmap
+
+### Version 0.2
+
+* Strategy optimization
+* Performance improvements
+* Better market structure detection
+
+### Version 0.3
+
+* Advanced backtesting engine
+* Performance analytics
+* Strategy comparison tools
+
+### Version 0.4
+
+* AI-assisted trade filtering
+* Adaptive market regime detection
+* Probability-based trade scoring
+
+### Version 1.0
+
+* Production-ready release
+* VPS deployment support
+* Complete AI integration
+* Multi-broker support
+* Advanced dashboard
+
+---
+
+# Security
+
+Never commit the following files to GitHub:
+
+* `config.py`
+* `.env`
+* API keys
+* Broker credentials
+* Account passwords
+
+Always use `config.example.py` as the public template.
+
+---
+
+# License
+
+This repository is a private project intended for personal research and development. Redistribution or commercial use is not permitted without permission.

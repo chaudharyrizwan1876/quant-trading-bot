@@ -128,14 +128,23 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
 # ─────────────────────────────────────────────
 
 def _get_session() -> str:
+    """
+    BUG FIX: Pehle yahan hardcoded 8-12/13-17 tha jo config.py
+    ke actual values (7-12 / 12-17) se match nahi karta tha —
+    isse ek 1-ghante ka GAP (12:00-13:00 GMT) ban gaya tha
+    jahan koi session match nahi hota tha. Ab config se
+    directly values liye ja rahe hain — koi gap nahi.
+    """
     h = datetime.now(timezone.utc).hour
 
     if config.KILL_ZONE_PRE_LONDON_START <= h < config.KILL_ZONE_PRE_LONDON_END:
         return "PRE_LONDON"
-    if 8 <= h < 12: return "LONDON"
+    if config.KILL_ZONE_LONDON_START <= h < config.KILL_ZONE_LONDON_END:
+        return "LONDON"
     if config.KILL_ZONE_PRE_NY_START <= h < config.KILL_ZONE_PRE_NY_END:
         return "PRE_NY"
-    if 13 <= h < 17: return "NEW_YORK"
+    if config.KILL_ZONE_NY_START <= h < config.KILL_ZONE_NY_END:
+        return "NEW_YORK"
 
     # Silver Bullet — independent window, session na ho tab bhi valid
     if _is_silver_bullet():
