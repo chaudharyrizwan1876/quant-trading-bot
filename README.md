@@ -57,7 +57,7 @@ Install **Python 3.10 or later**.
 
 Install MetaTrader 5 and log in to your trading account (Demo recommended).
 
-## 3. Install Dependencies
+## 3. Install Dependencies like python and other libraries
 
 ```bash
 pip install -r requirements.txt
