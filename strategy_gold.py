@@ -33,16 +33,20 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
         session = "OFF_SESSION"
         log_event("INFO", "GOLD: Off-session — trade phir bhi possible (no bonus).")
 
-    trend = _get_trend_bos(df_h1, df_m30)
+    trend = _get_trend_bos(df_h1, df_m30, df_m15)
     if trend == "NONE":
         log_event("INFO","GOLD: BOS trend unclear."); return no_trade
 
     log_event("INFO", f"GOLD: Trend={trend} Session={session}")
 
+    # M15 ka structure ab sirf INFO/bonus ke liye — majority vote
+    # mein M15 ka vote already shamil ho chuka hai, isliye ab
+    # yahan hard-block nahi karte (pehle yeh poori move miss
+    # karwa deta tha jab H1 lag kar raha hota tha).
     m15_struct = ind.get_market_structure(df_m15)
     m15_trend  = m15_struct["trend"]
     if m15_trend != "NONE" and m15_trend != trend:
-        log_event("INFO", f"GOLD: M15={m15_trend} conflict."); return no_trade
+        log_event("INFO", f"GOLD: M15={m15_trend} vs Trend={trend} — mismatch (info only, no block).")
 
     if not _check_adx(df_m15):
         log_event("INFO","GOLD: ADX low — ranging."); return no_trade
@@ -51,8 +55,10 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
     if not _check_d1_levels(df_d1, trend, current):
         return no_trade
 
-    if not _check_momentum(df_h1, trend):
-        return no_trade
+    # V8.4 FIX: RSI momentum check ab BLOCK nahi karta — bahut
+    # zyada trades cancel kar raha tha. Sirf info ke liye log
+    # hota hai ab, koi effect nahi score/entry pe.
+    _log_momentum_info(df_h1, trend)
 
     news_dir = None
     if config.NEWS_TRADE_ENABLED and news_sig and \
@@ -61,10 +67,18 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
         expected = "BUY" if trend == "BULLISH" else "SELL"
         if news_dir != expected: news_dir = None
 
-    m15_zone = _find_m15_zone(df_m15, trend)
-    if m15_zone and not _is_ote_entry(current, m15_zone, trend):
-        log_event("INFO", "GOLD: OTE deep nahi — Wait.")
-        m15_zone = None
+    # V8.2: Institutional Footprint zone PEHLE try karo (priority)
+    # Agar milta hai to normal OB/FVG check bilkul skip karo —
+    # yeh sabse high-confidence setup hai (retail SL le liya gaya).
+    m15_zone = _find_institutional_zone(df_h1, df_m15, trend, point)
+    is_institutional = m15_zone is not None
+
+    if not m15_zone:
+        # Fallback — purana OB/FVG/LIQ system (frequency maintain rakhne ke liye)
+        m15_zone = _find_m15_zone(df_m15, trend)
+        if m15_zone and not _is_ote_entry(current, m15_zone, trend):
+            log_event("INFO", "GOLD: OTE deep nahi — Wait.")
+            m15_zone = None
 
     # V7.4: Break-Retest ab BONUS hai, mandatory nahi
     # Retest mil jaye to extra score — na mile to bhi trade ho sakti hai
@@ -75,23 +89,61 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
             log_event("INFO", "GOLD: Retest abhi nahi — bonus na milega, aage badho.")
 
     m5_confirm = _m5_confirm(df_m5, trend)
+
+    # V8.3 FIX: M1 trigger ab BONUS hai, mandatory nahi (jaisa
+    # Break-Retest pehle se hai) — sirf 2-candle M1 pattern na
+    # milne ki wajah se poori trade cancel nahi hogi ab.
     m1_trigger = _m1_entry_confirmed(df_m1, trend)
+    if not m1_trigger:
+        log_event("INFO", "GOLD: M1 confirm nahi — bonus na milega, aage badho.")
 
     # V7.3: AMD bonus check
     amd_ok = _check_amd(df_m15, trend)
 
+    # V8.1 IMPROVEMENT 2: Volume confirmation
+    volume_ok = _check_volume(df_m15)
+
+    # V8.1 IMPROVEMENT 3: Daily pivot bonus
+    pivots = _calc_pivots(df_d1)
+    pivot_ok = _check_pivot_bonus(current, trend, pivots)
+
+    # V8.1 IMPROVEMENT 5: ATR regime caution
+    atr_abnormal = _check_atr_regime(df_m15)
+
+    judas_ok = _is_judas_swing_window()
     score = _calc_score(trend, m15_trend, m15_zone, m5_confirm,
-                        m1_trigger, news_dir, session, amd_ok)
+                        m1_trigger, news_dir, session, amd_ok,
+                        volume_ok, pivot_ok, atr_abnormal,
+                        is_institutional, judas_ok)
     if retest_ok:
         score += 3   # Retest confirm bonus
-    log_event("INFO", f"GOLD: Score={score}/{MIN_SCORE} AMD={amd_ok} Retest={retest_ok}")
-    if score < MIN_SCORE:
+
+    # V8.1 IMPROVEMENT 1: Weekly Quota Fallback — threshold relax karo
+    quota_adj  = _get_quota_adjustment()
+    min_score  = MIN_SCORE + quota_adj   # quota_adj negative hota hai
+
+    # V8.1 IMPROVEMENT 6: Hour-of-day adaptive learning (optional hook)
+    try:
+        import trade_memory as tm
+        hour_adj = tm.get_hour_adaptive_score(config.SYMBOL_GOLD)
+        score += hour_adj
+    except Exception:
+        pass
+
+    log_event("INFO",
+        f"GOLD: Score={score}/{min_score} (base_min={MIN_SCORE} quota_adj={quota_adj}) "
+        f"AMD={amd_ok} Retest={retest_ok} Vol={volume_ok} Pivot={pivot_ok} ATR_abn={atr_abnormal}"
+    )
+    if score < min_score:
         log_event("INFO", f"GOLD: Score low — Skip."); return no_trade
 
+    # V8.3 FIX: entry_ok ab M1 trigger pe depend nahi karta —
+    # sirf zone (ya news) chahiye. M1 sirf score ke through
+    # confidence badhata hai, block nahi karta.
     zone_ok  = m15_zone is not None
-    entry_ok = (zone_ok or news_dir is not None) and m1_trigger
+    entry_ok = zone_ok or news_dir is not None
     if not entry_ok:
-        log_event("INFO","GOLD: Entry conditions fail."); return no_trade
+        log_event("INFO","GOLD: Entry conditions fail — koi zone/news nahi."); return no_trade
 
     entry = df_m1.iloc[-2]["close"] if df_m1 is not None and len(df_m1)>2 \
             else current
@@ -108,13 +160,17 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
     if trend == "BULLISH":
         tp1 = round(entry + sl_size*1.0, 3)
         tp2 = round(entry + sl_size*2.0, 3)
-        tp3 = round(entry + sl_size*config.RR_FINAL, 3)
+        # V8.1 IMPROVEMENT 4: Structure-based TP (draw on liquidity)
+        tp3 = round(_find_liquidity_target(df_h1, entry, trend, sl_size, config.RR_FINAL), 3)
         sig = "BUY"
     else:
         tp1 = round(entry - sl_size*1.0, 3)
         tp2 = round(entry - sl_size*2.0, 3)
-        tp3 = round(entry - sl_size*config.RR_FINAL, 3)
+        tp3 = round(_find_liquidity_target(df_h1, entry, trend, sl_size, config.RR_FINAL), 3)
         sig = "SELL"
+
+    # Weekly quota counter update — is signal ne threshold pass kiya
+    _record_weekly_signal()
 
     log_event("INFO",
         f"GOLD {sig} E:{entry:.3f} SL:{sl:.3f} TP1:{tp1:.3f} "
@@ -218,35 +274,134 @@ def _check_amd(df, trend) -> bool:
     return amd_match
 
 
-def _get_trend_bos(df_h1, df_m30) -> str:
-    def bos(df):
-        if df is None or len(df) < 30: return "NONE"
-        closed = df.iloc[:-1].reset_index(drop=True)
-        sh,sl=[],[]
-        for i in range(2, min(len(closed)-2,30)):
-            c,p,n = closed.iloc[i],closed.iloc[i-1],closed.iloc[i+1]
-            if c["high"]>p["high"] and c["high"]>n["high"]: sh.append(c["high"])
-            if c["low"]<p["low"] and c["low"]<n["low"]: sl.append(c["low"])
-        if len(sh)<2 or len(sl)<2:
-            r=closed.tail(20).reset_index(drop=True)
-            si,hi=r["low"].idxmin(),r["high"].idxmax()
-            if si<hi: return "BULLISH"
-            if hi<si: return "BEARISH"
-            return "NONE"
-        hh,hl = sh[-1]>sh[-2], sl[-1]>sl[-2]
-        lh,ll = sh[-1]<sh[-2], sl[-1]<sl[-2]
-        if hh and hl: return "BULLISH"
-        if lh and ll: return "BEARISH"
-        if hh: return "BULLISH"
-        if ll: return "BEARISH"
+def _bos_single(df):
+    """Ek timeframe ka BOS-based trend (swing high/low compare)."""
+    if df is None or len(df) < 30: return "NONE"
+    closed = df.iloc[:-1].reset_index(drop=True)
+    sh,sl=[],[]
+    for i in range(2, min(len(closed)-2,30)):
+        c,p,n = closed.iloc[i],closed.iloc[i-1],closed.iloc[i+1]
+        if c["high"]>p["high"] and c["high"]>n["high"]: sh.append(c["high"])
+        if c["low"]<p["low"] and c["low"]<n["low"]: sl.append(c["low"])
+    if len(sh)<2 or len(sl)<2:
+        r=closed.tail(20).reset_index(drop=True)
+        si,hi=r["low"].idxmin(),r["high"].idxmax()
+        if si<hi: return "BULLISH"
+        if hi<si: return "BEARISH"
+        return "NONE"
+    hh,hl = sh[-1]>sh[-2], sl[-1]>sl[-2]
+    lh,ll = sh[-1]<sh[-2], sl[-1]<sl[-2]
+    if hh and hl: return "BULLISH"
+    if lh and ll: return "BEARISH"
+    if hh: return "BULLISH"
+    if ll: return "BEARISH"
+    return "NONE"
+
+
+def _fast_recent_trend(df, candles: int = 6) -> str:
+    """
+    Sirf last N candles ka higher-highs/higher-lows (ya lower)
+    check karo — swing-based se zyada FAST react karta hai,
+    lagging problem nahi hoti.
+    """
+    if df is None or len(df) < candles + 2:
+        return "NONE"
+    closed = df.iloc[:-1].tail(candles).reset_index(drop=True)
+    if len(closed) < 3:
         return "NONE"
 
-    h1t, m30t = bos(df_h1), bos(df_m30)
-    log_event("INFO", f"GOLD: H1_BOS={h1t} M30_BOS={m30t}")
-    if h1t==m30t and h1t!="NONE": return h1t
-    if h1t!="NONE" and m30t=="NONE": return h1t
-    if m30t!="NONE" and h1t=="NONE": return m30t
-    if h1t!="NONE": return h1t
+    ups = downs = 0
+    for i in range(1, len(closed)):
+        if closed.iloc[i]["high"] > closed.iloc[i-1]["high"] and            closed.iloc[i]["low"]  > closed.iloc[i-1]["low"]:
+            ups += 1
+        elif closed.iloc[i]["high"] < closed.iloc[i-1]["high"] and              closed.iloc[i]["low"]  < closed.iloc[i-1]["low"]:
+            downs += 1
+
+    total = len(closed) - 1
+    if total == 0:
+        return "NONE"
+    if ups / total >= 0.6:
+        return "BULLISH"
+    if downs / total >= 0.6:
+        return "BEARISH"
+    return "NONE"
+
+
+def _momentum_override(df_m15) -> str:
+    """
+    IMPROVEMENT 2: Displacement/momentum-based override.
+    Agar recent candles mein ek bahut bara directional move
+    ho (ATR ka 3x+), yeh khud trend confirm karta hai — chahe
+    swing-based BOS abhi lag kar raha ho.
+    """
+    if df_m15 is None or len(df_m15) < 20:
+        return "NONE"
+    closed = df_m15.iloc[:-1].reset_index(drop=True)
+    atr = _calc_atr(df_m15, 14)
+    if atr <= 0:
+        return "NONE"
+
+    recent = closed.tail(6)
+    net_move = recent.iloc[-1]["close"] - recent.iloc[0]["open"]
+
+    if net_move > atr * 2.5:
+        log_event("INFO",
+            f"GOLD: MOMENTUM OVERRIDE — bara bullish move "
+            f"(${net_move:.2f} vs ATR ${atr:.2f})"
+        )
+        return "BULLISH"
+    if net_move < -atr * 2.5:
+        log_event("INFO",
+            f"GOLD: MOMENTUM OVERRIDE — bara bearish move "
+            f"(${abs(net_move):.2f} vs ATR ${atr:.2f})"
+        )
+        return "BEARISH"
+    return "NONE"
+
+
+def _get_trend_bos(df_h1, df_m30, df_m15=None) -> str:
+    """
+    IMPROVEMENT 1: Majority Vote — H1 ab "hamesha jeetega" nahi,
+    balki H1+M30+M15 teeno ek-ek vote dete hain. 2/3 agree = trend.
+
+    IMPROVEMENT 2: Momentum Override — agar M15 pe ek bahut bara
+    displacement move ho (recent structure abhi update na hui ho
+    tab bhi), yeh directly trend confirm kar deta hai.
+    """
+    h1t  = _bos_single(df_h1)
+    m30t = _bos_single(df_m30)
+    m15t = _bos_single(df_m15) if df_m15 is not None else "NONE"
+
+    log_event("INFO", f"GOLD: H1_BOS={h1t} M30_BOS={m30t} M15_BOS={m15t}")
+
+    # ── Momentum override sabse pehle check karo — sabse fast signal ──
+    momentum = _momentum_override(df_m15)
+    if momentum != "NONE":
+        return momentum
+
+    # ── Fast recent-candle trend bhi ek "vote" ki tarah use karo ──
+    fast_m15 = _fast_recent_trend(df_m15, 6) if df_m15 is not None else "NONE"
+
+    votes = [v for v in (h1t, m30t, m15t, fast_m15) if v != "NONE"]
+    if not votes:
+        return "NONE"
+
+    bull_count = votes.count("BULLISH")
+    bear_count = votes.count("BEARISH")
+
+    log_event("INFO",
+        f"GOLD: Votes — BULLISH:{bull_count} BEARISH:{bear_count} "
+        f"(fast_m15={fast_m15})"
+    )
+
+    if bull_count >= 2 and bull_count > bear_count:
+        return "BULLISH"
+    if bear_count >= 2 and bear_count > bull_count:
+        return "BEARISH"
+
+    # Majority na bane to purana fallback — H1 priority
+    if h1t != "NONE":
+        return h1t
     return "NONE"
 
 
@@ -297,8 +452,15 @@ def _find_m15_zone(df_m15, trend) -> dict:
     current = df_m15.iloc[-2]["close"]
     obs = ind.get_order_blocks(df_m15, trend)
     if obs:
-        ob=obs[0]
-        if ind.price_in_zone(current, ob["top"], ob["bottom"], BUF*3):
+        # V8.2: OB Freshness check — sirf pehli 3 candidate OBs try karo,
+        # jo bahut retest ho chuki hain unko skip karo (stale)
+        for ob in obs[:3]:
+            if not ind.price_in_zone(current, ob["top"], ob["bottom"], BUF*3):
+                continue
+            ob_idx = ob.get("idx", 0)
+            if not _is_ob_fresh(df_m15, ob["top"], ob["bottom"], ob_idx):
+                log_event("INFO", "GOLD: OB stale (bahut retest ho chuka) — skip.")
+                continue
             return {"type":"OB_M15","top":ob["top"],"bottom":ob["bottom"]}
     fvgs = ind.get_fvg(df_m15, trend)
     if fvgs:
@@ -391,14 +553,10 @@ def _calc_rsi(df, period=14) -> float:
     return 100 - (100/(1+rs))
 
 
-def _check_momentum(df_h1, trend) -> bool:
+def _log_momentum_info(df_h1, trend):
+    """RSI ab sirf informational — koi trade block nahi karta."""
     rsi = _calc_rsi(df_h1, config.RSI_PERIOD)
-    log_event("INFO", f"GOLD: H1 RSI={rsi:.1f}")
-    if trend == "BULLISH" and rsi >= config.RSI_OVERBOUGHT:
-        log_event("INFO", "GOLD: RSI overbought — Skip."); return False
-    if trend == "BEARISH" and rsi <= config.RSI_OVERSOLD:
-        log_event("INFO", "GOLD: RSI oversold — Skip."); return False
-    return True
+    log_event("INFO", f"GOLD: H1 RSI={rsi:.1f} (info only, no block)")
 
 
 _break_retest_state = {}
@@ -454,13 +612,380 @@ def _calc_sl_atr(df_m15, trend, entry) -> dict:
     return {"sl":sl,"size":sl_size,"atr":atr}
 
 
-def _calc_score(trend, m15_trend, zone, m5c, m1t, news_dir, session, amd_ok) -> int:
+# ─────────────────────────────────────────────
+#  IMPROVEMENT 1: WEEKLY QUOTA FALLBACK
+#  Agar hafte ke Wed/Thu tak minimum trades na hui hon,
+#  score threshold temporarily kam kar do
+# ─────────────────────────────────────────────
+
+import json, os
+
+WEEKLY_FILE = "data/gold_weekly_signals.json"
+
+def _get_week_key() -> str:
+    now = datetime.now(timezone.utc)
+    year, week, _ = now.isocalendar()
+    return f"{year}-W{week}"
+
+def _load_weekly():
+    try:
+        if os.path.exists(WEEKLY_FILE):
+            with open(WEEKLY_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_weekly(data):
+    try:
+        os.makedirs("data", exist_ok=True)
+        with open(WEEKLY_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        log_event("WARNING", f"Weekly file save fail: {e}")
+
+def _record_weekly_signal():
+    data = _load_weekly()
+    key = _get_week_key()
+    data[key] = data.get(key, 0) + 1
+    _save_weekly(data)
+
+def _get_quota_adjustment() -> int:
+    """
+    Wednesday tak (weekday>=2) agar 0 trades hon → -1 threshold
+    Thursday tak (weekday>=3) agar <2 trades hon → -1 threshold
+    Friday tak (weekday>=4) agar <3 trades hon → -2 threshold
+    """
+    data  = _load_weekly()
+    key   = _get_week_key()
+    count = data.get(key, 0)
+    now   = datetime.now(timezone.utc)
+    wday  = now.weekday()   # 0=Mon .. 6=Sun
+
+    if wday >= 4 and count < 3:
+        log_event("INFO", f"GOLD: Weekly quota low ({count}) — threshold -2")
+        return -2
+    if wday >= 3 and count < 2:
+        log_event("INFO", f"GOLD: Weekly quota low ({count}) — threshold -1")
+        return -1
+    if wday >= 2 and count < 1:
+        log_event("INFO", f"GOLD: Weekly quota low ({count}) — threshold -1")
+        return -1
+    return 0
+
+
+# ─────────────────────────────────────────────
+#  IMPROVEMENT 2: VOLUME CONFIRMATION
+# ─────────────────────────────────────────────
+
+def _check_volume(df_m15) -> bool:
+    """Entry candle ka volume average se zyada hona chahiye."""
+    if df_m15 is None or len(df_m15) < 20 or "tick_volume" not in df_m15.columns:
+        return True   # Data nahi to neutral allow
+    closed = df_m15.iloc[:-1]
+    avg_vol = closed["tick_volume"].tail(20).mean()
+    entry_vol = closed["tick_volume"].iloc[-1]
+    return entry_vol >= avg_vol * 0.9   # Thoda loose — 90% bhi chalega
+
+
+# ─────────────────────────────────────────────
+#  IMPROVEMENT 3: DAILY PIVOT POINTS (Classic Floor Pivots)
+# ─────────────────────────────────────────────
+
+def _calc_pivots(df_d1) -> dict:
+    """PP, R1, S1 — kal ke H/L/C se classic floor pivot formula."""
+    if df_d1 is None or len(df_d1) < 2:
+        return {}
+    closed = df_d1.iloc[:-1]
+    prev = closed.iloc[-1]
+    H, L, C = prev["high"], prev["low"], prev["close"]
+    PP = (H + L + C) / 3
+    R1 = 2*PP - L
+    S1 = 2*PP - H
+    return {"PP": PP, "R1": R1, "S1": S1}
+
+def _check_pivot_bonus(current, trend, pivots) -> bool:
+    """Price kisi pivot level ke paas ho to bonus (institutional level)."""
+    if not pivots:
+        return False
+    tolerance = 3.0   # $3 tolerance
+    for level_name, level_val in pivots.items():
+        if abs(current - level_val) <= tolerance:
+            log_event("INFO", f"GOLD: Price near pivot {level_name}={level_val:.2f}")
+            return True
+    return False
+
+
+# ─────────────────────────────────────────────
+#  IMPROVEMENT 4: STRUCTURE-BASED TP (Draw on Liquidity)
+# ─────────────────────────────────────────────
+
+def _find_liquidity_target(df_h1, entry, trend, sl_size, rr_default=3.0):
+    """
+    Agar koi qareeb swing high/low (liquidity pool) 1:3 se pehle
+    mile, wahi target banao — RR minimum 1.5 zaroor rahe.
+    """
+    default_tp = entry + sl_size*rr_default if trend=="BULLISH" else entry - sl_size*rr_default
+
+    if df_h1 is None or len(df_h1) < 20:
+        return default_tp
+
+    recent = df_h1.tail(20)
+    if trend == "BULLISH":
+        candidates = [h for h in recent["high"] if h > entry + sl_size*1.5 and h < default_tp]
+        if candidates:
+            target = min(candidates)   # Nearest liquidity pool
+            log_event("INFO", f"GOLD: Liquidity target found at {target:.2f} (instead of {default_tp:.2f})")
+            return target
+    else:
+        candidates = [l for l in recent["low"] if l < entry - sl_size*1.5 and l > default_tp]
+        if candidates:
+            target = max(candidates)
+            log_event("INFO", f"GOLD: Liquidity target found at {target:.2f} (instead of {default_tp:.2f})")
+            return target
+
+    return default_tp
+
+
+# ─────────────────────────────────────────────
+#  IMPROVEMENT 5: ATR PERCENTILE (Volatility Regime)
+# ─────────────────────────────────────────────
+
+def _check_atr_regime(df_m15) -> bool:
+    """
+    Agar current ATR apne 20-period average se 2x zyada ho
+    (abnormal spike/news chaos) — caution flag True return karo.
+    """
+    if df_m15 is None or len(df_m15) < 25:
+        return False
+    current_atr = _calc_atr(df_m15, 14)
+    # Rolling ATR average — simplified: last 20 candles ki range avg
+    closed = df_m15.iloc[:-1].tail(20)
+    avg_range = (closed["high"] - closed["low"]).mean()
+    if avg_range <= 0:
+        return False
+    is_abnormal = current_atr > avg_range * 2.5
+    if is_abnormal:
+        log_event("INFO", f"GOLD: ATR abnormal spike detected (ATR={current_atr:.2f} vs avg={avg_range:.2f})")
+    return is_abnormal
+
+
+# ════════════════════════════════════════════════════════════
+#  V8.2 — INSTITUTIONAL FOOTPRINT DETECTION
+#  "Retail SL hit hone ke baad hi entry — sirf zone touch pe nahi"
+# ════════════════════════════════════════════════════════════
+
+INST_TOLERANCE_PCT   = 0.0008   # EQH/EQL cluster tolerance
+INST_PIERCE_BUFFER   = 1.5      # $ — kam se kam itna aage nikalna chahiye
+DISPLACEMENT_MULT    = 1.8      # Body kam se kam itni bari (avg se)
+MAX_OB_RETESTS       = 2        # Isse zyada retest ho to OB "stale"
+
+# ─────────────────────────────────────────────
+#  1. EQUAL HIGHS/LOWS — Retail Stop Clusters
+# ─────────────────────────────────────────────
+
+def _find_equal_levels(df, lookback: int = 25) -> dict:
+    """
+    Jahan 2+ highs (ya lows) ek dusre ke bahut paas hon —
+    yeh retail stop-loss cluster hai (obvious S/R levels
+    jahan sab log SL rakhte hain).
+    """
+    if df is None or len(df) < lookback + 2:
+        return {"eqh": [], "eql": []}
+
+    closed = df.iloc[:-1].tail(lookback).reset_index(drop=True)
+    highs  = closed["high"].tolist()
+    lows   = closed["low"].tolist()
+
+    eqh, eql = [], []
+
+    for i in range(len(highs)):
+        for j in range(i+1, len(highs)):
+            if abs(highs[i] - highs[j]) / highs[i] <= INST_TOLERANCE_PCT:
+                level = (highs[i] + highs[j]) / 2
+                if not any(abs(level - e) < 1.0 for e in eqh):
+                    eqh.append(level)
+
+    for i in range(len(lows)):
+        for j in range(i+1, len(lows)):
+            if abs(lows[i] - lows[j]) / lows[i] <= INST_TOLERANCE_PCT:
+                level = (lows[i] + lows[j]) / 2
+                if not any(abs(level - e) < 1.0 for e in eql):
+                    eql.append(level)
+
+    return {"eqh": eqh, "eql": eql}
+
+
+# ─────────────────────────────────────────────
+#  2. DISPLACEMENT CANDLE — Asal Institutional Footprint
+# ─────────────────────────────────────────────
+
+def _is_displacement_candle(candle, avg_body: float, direction: str) -> bool:
+    """
+    Strong conviction candle — body bara, wick chota, FVG
+    banane wali. Yeh institutions ke enter hone ka signal hai.
+    """
+    body = abs(candle["close"] - candle["open"])
+    if body < avg_body * DISPLACEMENT_MULT:
+        return False
+
+    total_range = candle["high"] - candle["low"]
+    if total_range <= 0:
+        return False
+
+    if direction == "BULLISH":
+        if candle["close"] <= candle["open"]:
+            return False
+        upper_wick = candle["high"] - candle["close"]
+        wick_ratio = upper_wick / total_range
+    else:
+        if candle["close"] >= candle["open"]:
+            return False
+        lower_wick = candle["close"] - candle["low"]
+        wick_ratio = lower_wick / total_range
+
+    return wick_ratio < 0.35   # Opposite wick chota hona chahiye = conviction
+
+
+# ─────────────────────────────────────────────
+#  3. VOLUME SPIKE ON SWEEP CANDLE
+# ─────────────────────────────────────────────
+
+def _has_volume_spike(df, idx: int, avg_vol: float) -> bool:
+    if "tick_volume" not in df.columns or avg_vol <= 0:
+        return True   # Data nahi to neutral allow
+    try:
+        vol = df.iloc[idx]["tick_volume"]
+        return vol >= avg_vol * 1.3
+    except Exception:
+        return True
+
+
+# ─────────────────────────────────────────────
+#  4. JUDAS SWING — Session Open Fake-Out
+# ─────────────────────────────────────────────
+
+def _is_judas_swing_window() -> bool:
+    """Session open ke pehle 30 minute — fake move ka window."""
+    now = datetime.now(timezone.utc)
+    for start_h in (7, 12):   # London open, NY open
+        if now.hour == start_h and now.minute <= 30:
+            return True
+    return False
+
+
+# ─────────────────────────────────────────────
+#  5. OB FRESHNESS — Pehli Baar Use Na Hui Ho
+# ─────────────────────────────────────────────
+
+def _is_ob_fresh(df_m15, ob_top: float, ob_bottom: float, ob_idx: int) -> bool:
+    """
+    OB banne ke baad se ab tak kitni baar price wapas
+    is zone mein aayi hai — zyada baar aaya to "stale" hai
+    (retail ne discover kar liya, institutional edge kam ho gaya).
+    """
+    if df_m15 is None or len(df_m15) < ob_idx + 5:
+        return True
+
+    closed = df_m15.iloc[:-1].reset_index(drop=True)
+    after  = closed.iloc[ob_idx+1:]
+    if after.empty:
+        return True
+
+    touches = 0
+    was_inside = False
+    for _, c in after.iterrows():
+        inside = c["low"] <= ob_top and c["high"] >= ob_bottom
+        if inside and not was_inside:
+            touches += 1
+        was_inside = inside
+
+    return touches <= MAX_OB_RETESTS
+
+
+# ─────────────────────────────────────────────
+#  6. MAIN: INSTITUTIONAL FOOTPRINT ZONE FINDER
+#  H1 (external) priority, M15 (internal) fallback
+# ─────────────────────────────────────────────
+
+def _find_institutional_zone(df_h1, df_m15, trend, point) -> dict:
+    """
+    Poora institutional footprint check:
+    1. EQH/EQL dhundo (H1 external priority, M15 internal fallback)
+    2. Price un se PAR (beyond) nikli ho — sirf touch nahi
+    3. Us sweep ke baad Displacement candle bane
+    4. Volume spike ho sweep candle pe
+    5. (Bonus) Judas Swing window mein ho to extra confidence
+
+    Return: zone dict with type="INST_SWEEP" ya None
+    """
+    for df_check, label, lookback in [(df_h1,"H1",30), (df_m15,"M15",20)]:
+        if df_check is None or len(df_check) < lookback + 5:
+            continue
+
+        levels = _find_equal_levels(df_check, lookback)
+        closed = df_check.iloc[:-1].reset_index(drop=True)
+        if len(closed) < 3:
+            continue
+
+        c        = closed.iloc[-1]
+        prev_avg_body = abs(closed["close"] - closed["open"]).tail(20).mean()
+        avg_vol  = closed["tick_volume"].tail(20).mean() if "tick_volume" in closed.columns else 0
+
+        if trend == "BULLISH" and levels["eql"]:
+            # Nearest EQL jo price ne pierce ki ho
+            for level in sorted(levels["eql"], key=lambda x: abs(x - c["close"])):
+                pierced = c["low"] < level - INST_PIERCE_BUFFER and c["close"] > level
+                if not pierced:
+                    continue
+                if not _is_displacement_candle(c, prev_avg_body, "BULLISH"):
+                    continue
+                if not _has_volume_spike(closed, len(closed)-1, avg_vol):
+                    continue
+
+                log_event("INFO",
+                    f"GOLD: INSTITUTIONAL sweep [{label}] — EQL={level:.2f} "
+                    f"pierced, displacement confirmed!"
+                )
+                return {
+                    "type":   f"INST_SWEEP_{label}",
+                    "top":    level + INST_PIERCE_BUFFER,
+                    "bottom": c["low"] - 1.0
+                }
+
+        elif trend == "BEARISH" and levels["eqh"]:
+            for level in sorted(levels["eqh"], key=lambda x: abs(x - c["close"])):
+                pierced = c["high"] > level + INST_PIERCE_BUFFER and c["close"] < level
+                if not pierced:
+                    continue
+                if not _is_displacement_candle(c, prev_avg_body, "BEARISH"):
+                    continue
+                if not _has_volume_spike(closed, len(closed)-1, avg_vol):
+                    continue
+
+                log_event("INFO",
+                    f"GOLD: INSTITUTIONAL sweep [{label}] — EQH={level:.2f} "
+                    f"pierced, displacement confirmed!"
+                )
+                return {
+                    "type":   f"INST_SWEEP_{label}",
+                    "top":    c["high"] + 1.0,
+                    "bottom": level - INST_PIERCE_BUFFER
+                }
+
+    return None
+
+
+def _calc_score(trend, m15_trend, zone, m5c, m1t, news_dir, session, amd_ok,
+                volume_ok=True, pivot_ok=False, atr_abnormal=False,
+                is_institutional=False, judas_ok=False) -> int:
     s=0
     if trend!="NONE": s+=1
     if m15_trend==trend: s+=1
     if zone:
         zt=zone.get("type","")
-        if "OB" in zt: s+=2
+        if "INST_SWEEP" in zt: s+=6   # V8.2 — sabse strong signal
+        elif "OB" in zt: s+=2
         elif "FVG" in zt: s+=1
         elif "LIQ" in zt: s+=1
     if m5c: s+=1
@@ -470,6 +995,12 @@ def _calc_score(trend, m15_trend, zone, m5c, m1t, news_dir, session, amd_ok) -> 
     if session in ("PRE_LONDON","PRE_NY"): s+=1
     if session == "SILVER_BULLET": s+=2
     if amd_ok: s+=2
+    # V8.1 improvements
+    if volume_ok: s+=1          # Real institutional volume
+    if pivot_ok:  s+=1          # Price kisi pivot level ke paas
+    if atr_abnormal: s-=2       # Abnormal volatility — caution penalty
+    # V8.2 improvements
+    if judas_ok: s+=2           # Session open Judas Swing window
     return s
 
 

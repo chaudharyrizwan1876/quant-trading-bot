@@ -83,6 +83,18 @@ def record_result(symbol: str, comment: str, profit: float, was_sl: bool):
     now_str = datetime.now(timezone.utc).isoformat()
     is_loss = was_sl or profit < 0
 
+    # V8.1 IMPROVEMENT 6: Hour-of-day bucket tracking
+    hour        = datetime.now(timezone.utc).hour
+    hour_bucket = hour // 3   # 3-ghante ke buckets — enough data density
+    hour_key    = f"{symbol}_hour{hour_bucket}"
+    if "hours" not in mem: mem["hours"] = {}
+    if hour_key not in mem["hours"]:
+        mem["hours"][hour_key] = {"wins":0,"losses":0}
+    if is_loss:
+        mem["hours"][hour_key]["losses"] += 1
+    else:
+        mem["hours"][hour_key]["wins"] += 1
+
     # ── Combo (symbol+pattern) tracking ──
     if key not in mem["combos"]:
         mem["combos"][key] = {"wins":0,"losses":0,"recent_losses":[],"blocked_until":None}
@@ -246,6 +258,35 @@ def get_adaptive_score(symbol: str, comment: str) -> float:
     log_event("INFO",
         f"[{symbol}][{pattern}] Adaptive: WR={win_rate*100:.0f}% "
         f"({c['wins']}W/{c['losses']}L) → Score adj: {adj:+.0f}"
+    )
+    return adj
+
+
+def get_hour_adaptive_score(symbol: str) -> float:
+    """
+    Is waqt (3-ghante bucket) ka historical win-rate check karo.
+    Achi performing ghante ko bonus, buri performing ko penalty —
+    bilkul get_adaptive_score jaisa lekin time-based.
+    """
+    mem  = _load()
+    hour = datetime.now(timezone.utc).hour
+    hour_bucket = hour // 3
+    hour_key = f"{symbol}_hour{hour_bucket}"
+
+    h = mem.get("hours", {}).get(hour_key, {})
+    total = h.get("wins", 0) + h.get("losses", 0)
+    if total < 3:
+        return 0.0
+
+    win_rate = h["wins"] / total
+    if win_rate >= 0.65: adj = 10.0
+    elif win_rate >= 0.50: adj = 5.0
+    elif win_rate >= 0.35: adj = 0.0
+    else: adj = -10.0
+
+    log_event("INFO",
+        f"[{symbol}] Hour-bucket {hour_bucket} WR={win_rate*100:.0f}% "
+        f"({h['wins']}W/{h['losses']}L) → Score adj: {adj:+.0f}"
     )
     return adj
 
