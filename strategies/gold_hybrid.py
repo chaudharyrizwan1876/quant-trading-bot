@@ -124,7 +124,7 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
 
     # V8.1 IMPROVEMENT 6: Hour-of-day adaptive learning (optional hook)
     try:
-        import trade_memory as tm
+        from memory import trade_memory as tm
         hour_adj = tm.get_hour_adaptive_score(config.SYMBOL_GOLD)
         score += hour_adj
     except Exception:
@@ -172,11 +172,37 @@ def generate_gold_signal(df_h1, df_m30, df_m15, df_m5, df_m1, point,
     # Weekly quota counter update — is signal ne threshold pass kiya
     _record_weekly_signal()
 
+    # ── Structured factors for the confidence engine (ai/confidence.py) ──
+    # Yeh wahi booleans hain jo upar already compute ho chuke hain —
+    # ab inhe ek normalized dict mein expose karte hain taake decision
+    # layer inka weighted, explainable evaluation kar sake.
+    zt = m15_zone["type"] if m15_zone else ""
+    factors = {
+        "htf_trend_aligned":     trend != "NONE",
+        "m15_structure_aligned": m15_trend == trend,
+        "institutional_sweep":   is_institutional or "INST_SWEEP" in zt,
+        "order_block":           "OB" in zt,
+        "fair_value_gap":        "FVG" in zt,
+        "liquidity_sweep":       "LIQ" in zt,
+        "break_retest":          bool(retest_ok),
+        "m5_confirmation":       bool(m5_confirm),
+        "m1_trigger":            bool(m1_trigger),
+        "amd_pattern":           bool(amd_ok),
+        "volume_confirmation":   bool(volume_ok),
+        "pivot_confluence":      bool(pivot_ok),
+        "prime_session":         session in ("LONDON", "NEW_YORK"),
+        "silver_bullet_window":  session == "SILVER_BULLET",
+        "judas_window":          bool(judas_ok),
+        "news_aligned":          news_dir is not None,
+        "atr_abnormal":          bool(atr_abnormal),
+    }
+
     log_event("INFO",
         f"GOLD {sig} E:{entry:.3f} SL:{sl:.3f} TP1:{tp1:.3f} "
         f"TP2:{tp2:.3f} TP3:{tp3:.3f} Score:{score}")
     return {"signal":sig,"entry":entry,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-            "comment":f"GOLD_{sig}_{zone_type}_S{score}","score":score}
+            "comment":f"GOLD_{sig}_{zone_type}_S{score}","score":score,
+            "factors":factors}
 
 
 # ─────────────────────────────────────────────

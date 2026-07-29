@@ -14,3 +14,13 @@ SYMBOL_ICT  = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
 
 # Baaki saari settings config.py mein dekho — risk %, sessions,
 # ATR multipliers, etc. Yeh file sirf login template ke liye hai.
+
+# ── Key runtime tunables (defaults config.py mein set hain) ──
+# MIN_CONFIDENCE              = 66.0   # 0..99; is se upar hi trade (quality gate)
+# CONFIDENCE_GATING_ENABLED  = True    # False → confidence sirf log/rank, no block
+# RISK_PERCENT               = 0.01    # 1% equity hard cap per trade
+# RISK_PERCENT_MIN           = 0.005   # confidence-scaled sizing ka floor
+# MAX_CONSECUTIVE_LOSSES     = 3       # itni lagataar losses → cooldown breaker
+# CONSECUTIVE_LOSS_COOLDOWN_MINS = 120
+# MAX_DAILY_LOSS_PCT         = 0.03    # 3% daily loss → trading paused
+# MAX_OPEN_TRADES            = 3       # global open-position cap

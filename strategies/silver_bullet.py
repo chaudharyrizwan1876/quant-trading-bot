@@ -157,5 +157,11 @@ def generate_silver_bullet_signal(symbol, df_m5, point) -> dict:
         "tp2":     tp2,
         "tp3":     tp3,
         "comment": comment,
-        "score":   8   # AMD (10) se thoda kam — kyunki SB fast/short trade hai
+        "score":   8,  # AMD (10) se thoda kam — kyunki SB fast/short trade hai
+        "factors": {
+            "liquidity_sweep":      True,   # swing high/low sweep hua
+            "confirmed_pattern":    True,   # complete self-contained setup
+            "fair_value_gap":       True,   # sweep ke baad FVG reversal
+            "silver_bullet_window": True,   # ICT Silver Bullet time window
+        },
     }

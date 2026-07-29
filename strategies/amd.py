@@ -163,5 +163,11 @@ def generate_amd_signal(symbol, df_m15, point) -> dict:
         "tp2":     tp2,
         "tp3":     tp3,
         "comment": comment,
-        "score":   10   # AMD apna fixed high-confidence score deta hai
+        "score":   10,  # AMD apna fixed high-confidence score deta hai
+        "factors": {
+            "amd_pattern":       True,   # poora Power-of-3 confirm hua
+            "confirmed_pattern": True,   # complete self-contained setup
+            "liquidity_sweep":   True,   # manipulation phase ne liquidity li
+            "htf_trend_aligned": True,   # distribution direction = trade direction
+        },
     }
