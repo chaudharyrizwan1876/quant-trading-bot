@@ -25,4 +25,5 @@ SYMBOL_ICT  = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
 # MAX_DAILY_LOSS_PCT         = 0.03    # 3% daily loss → trading paused
 # MAX_OPEN_TRADES            = 3       # global open-position cap
 # PARTIAL_CLOSE_ENABLED      = False   # backtest: aggressive partial hurt edge
-# MAX_HOLD_MINUTES           = 120     # scalp: itne min baad force-close (0=off)
+# MAX_HOLD_MINUTES           = 90      # scalp: itne min baad force-close (0=off)
+# STRATEGY_MODE              = "momentum"  # "momentum" (scalper) ya "swing" (old stack)

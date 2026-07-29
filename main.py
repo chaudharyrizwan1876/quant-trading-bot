@@ -11,6 +11,7 @@ from market_data import mt5_connector as mt5c
 from strategies import gold_hybrid as strategy_gold
 from strategies import amd as strategy_amd
 from strategies import silver_bullet as strategy_silver_bullet
+from strategies import scalper_momentum
 from news import news_reader
 from execution import trade_manager
 from risk import risk_manager as rm
@@ -123,7 +124,12 @@ def run():
         return
 
     log_event("INFO", f"Symbol: {config.SYMBOL_GOLD}")
-    log_event("INFO", f"Strategies: Gold Hybrid + AMD + Silver Bullet")
+    _mode = getattr(config, "STRATEGY_MODE", "momentum")
+    if _mode == "momentum":
+        log_event("INFO", "Strategy: M5 Momentum Scalper (backtest winner) "
+                          f"| time-stop {getattr(config,'MAX_HOLD_MINUTES',0)}min")
+    else:
+        log_event("INFO", "Strategies: Gold Hybrid + AMD + Silver Bullet (swing mode)")
     log_event("INFO", f"Risk : {config.RISK_PERCENT*100:.0f}% hard cap, "
                       f"scaled down to {getattr(config,'RISK_PERCENT_MIN',config.RISK_PERCENT)*100:.1f}% "
                       f"by confidence")
@@ -154,11 +160,16 @@ def run():
 
             candidates = []
 
-            for label, getter in (
-                ("GOLD",     _get_gold_signal),
-                ("GOLD-AMD", lambda: _get_amd_signal(config.SYMBOL_GOLD)),
-                ("GOLD-SB",  lambda: _get_silver_bullet_signal(config.SYMBOL_GOLD)),
-            ):
+            if getattr(config, "STRATEGY_MODE", "momentum") == "momentum":
+                getters = (("GOLD-MOM", _get_momentum_signal),)
+            else:
+                getters = (
+                    ("GOLD",     _get_gold_signal),
+                    ("GOLD-AMD", lambda: _get_amd_signal(config.SYMBOL_GOLD)),
+                    ("GOLD-SB",  lambda: _get_silver_bullet_signal(config.SYMBOL_GOLD)),
+                )
+
+            for label, getter in getters:
                 try:
                     result = getter()
                     if result and result["signal"] != "NO_TRADE":
@@ -235,6 +246,41 @@ def _get_gold_signal() -> dict:
         entry = result.get("entry") or price["ask"]
         _finalize_sl_tp_broker_min(sym, result, entry)
         _apply_risk_cap(sym, result, entry)   # ← Asal 1% cap yahan lagta hai
+
+    return result
+
+
+def _get_momentum_signal() -> dict:
+    """
+    M5 momentum/breakout scalper (backtest winner). M5 primary +
+    M15 context. Baaki getters jaisa hi finalize/risk-cap flow.
+    """
+    sym = config.SYMBOL_GOLD
+    price = mt5c.get_price(sym)
+    if price is None:
+        return None
+    print(f"\n{sym} — Bid:{price['bid']:.3f}  Ask:{price['ask']:.3f}")
+
+    if not rm.can_open_trade(sym):
+        return None
+
+    point  = mt5c.get_symbol_point(sym)
+    df_m15 = mt5c.get_candles(config.TIMEFRAME_M15, config.CANDLE_M15, sym)
+    df_m5  = mt5c.get_candles(config.TIMEFRAME_M5,  config.CANDLE_M5,  sym)
+    df_m1  = mt5c.get_candles(config.TIMEFRAME_M1,  config.CANDLE_M1,  sym)
+
+    if df_m5 is None:
+        log_event("WARNING", f"[{sym}] M5 candles nahi milin.")
+        return None
+
+    result = scalper_momentum.generate_scalp_momentum_signal(
+        df_m15=df_m15, df_m5=df_m5, df_m1=df_m1, point=point
+    )
+
+    if result and result["signal"] != "NO_TRADE":
+        entry = result.get("entry") or price["ask"]
+        _finalize_sl_tp_broker_min(sym, result, entry)
+        _apply_risk_cap(sym, result, entry)
 
     return result
 
