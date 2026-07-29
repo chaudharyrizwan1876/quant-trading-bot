@@ -54,11 +54,15 @@ def _hit(price_low, price_high, level, is_buy_stop_side) -> bool:
     return price_low <= level <= price_high
 
 
-def simulate_trade(trade: SimTrade, future_bars) -> SimTrade:
+def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None) -> SimTrade:
     """
-    trade:       open SimTrade (entry already set)
-    future_bars: iterable of dict/rows with high/low/close/time,
-                 entry ke BAAD ke bars (chronological).
+    trade:          open SimTrade (entry already set)
+    future_bars:    iterable of dict/rows with high/low/close/time,
+                    entry ke BAAD ke bars (chronological).
+    max_hold_bars:  None → no time limit. Warna itne bars ke baad
+                    trade force-close (scalp behavior — ghanton tak
+                    hold nahi). Bars usi granularity ke hain jis par
+                    fills simulate ho rahe hain (M5).
 
     Live trade_manager rules ko replicate karta hai. Mutates &
     returns trade with exit fields set.
@@ -76,10 +80,12 @@ def simulate_trade(trade: SimTrade, future_bars) -> SimTrade:
 
     partial_rr  = config.PARTIAL_CLOSE_RR
     partial_pct = config.PARTIAL_CLOSE_PCT
+    if not getattr(config, "PARTIAL_CLOSE_ENABLED", True):
+        partial_pct = 0.0
     moved_be = False
     moved_tp1 = False
 
-    for bar in future_bars:
+    for bar_i, bar in enumerate(future_bars):
         hi, lo = bar["high"], bar["low"]
         t = bar["time"]
 
@@ -124,6 +130,16 @@ def simulate_trade(trade: SimTrade, future_bars) -> SimTrade:
         elif fav_r >= 1.0 and not moved_be:
             sl = entry            # break-even
             moved_be = True
+
+        # ── 5. Time-based exit (scalp) — max hold cross ho gaya ──
+        if max_hold_bars is not None and (bar_i + 1) >= max_hold_bars:
+            close = bar["close"]
+            exit_r = ((close - entry) / risk) if is_buy else ((entry - close) / risk)
+            trade.exit = close
+            trade.exit_time = t
+            trade.exit_reason = "TIME"
+            trade.r_multiple = trade.realized_r + exit_r * trade.remaining
+            return trade
 
     # ── Ran out of bars — close at last bar close (EOD/data end) ──
     if future_bars:

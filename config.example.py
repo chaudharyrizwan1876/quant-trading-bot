@@ -24,3 +24,5 @@ SYMBOL_ICT  = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
 # CONSECUTIVE_LOSS_COOLDOWN_MINS = 120
 # MAX_DAILY_LOSS_PCT         = 0.03    # 3% daily loss → trading paused
 # MAX_OPEN_TRADES            = 3       # global open-position cap
+# PARTIAL_CLOSE_ENABLED      = False   # backtest: aggressive partial hurt edge
+# MAX_HOLD_MINUTES           = 120     # scalp: itne min baad force-close (0=off)

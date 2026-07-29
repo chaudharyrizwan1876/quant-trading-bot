@@ -44,14 +44,22 @@ class GoldBacktest:
             (time column datetime64 UTC). M15 + M5 zaroori hain.
     """
 
+    _TF_MINS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
+
     def __init__(self, symbol, frames, point=0.001,
-                 confidence_gate=True, warmup_m15=120, strategy_fn=None):
+                 confidence_gate=True, warmup_m15=120, strategy_fn=None,
+                 step_tf="M15", fill_tf="M5", freeze_extra=None):
         self.symbol = symbol
         self.frames = frames
         self.point = point
         self.confidence_gate = confidence_gate
         self.warmup = warmup_m15
         self.strategy_fn = strategy_fn   # None → live gold_hybrid (testing seam)
+        # Decision cadence (step_tf) aur fill granularity (fill_tf).
+        # Swing/hybrid: step M15, fill M5. Scalper: step M5, fill M1.
+        self.step_tf = step_tf
+        self.fill_tf = fill_tf
+        self.freeze_extra = freeze_extra or []   # scalper modules to clock-freeze
         self.trades = []
 
     # ── side-effect isolation ──
@@ -88,10 +96,17 @@ class GoldBacktest:
         self._tm.MEMORY_FILE = self._saved_mem
         self._tm._memory = None
 
-    def _future_m5(self, t):
-        m5 = self.frames["M5"]
-        fut = m5[m5["time"] > t]
-        return [dict(r) for _, r in fut.iterrows()]
+    def _future_fill(self, t, cap=None):
+        """
+        Entry ke baad ke fill_tf bars. `cap` set ho to sirf utne bars
+        (time-stop ke hisaab se trade kabhi utna hold nahi karti, is
+        liye baaki bars bekaar — yeh M1 fills pe bara speed-up hai).
+        """
+        fdf = self.frames[self.fill_tf]
+        fut = fdf[fdf["time"] > t]
+        if cap is not None:
+            fut = fut.head(cap)
+        return fut.to_dict("records")
 
     def run(self):
         import ai.confidence as ai_conf
@@ -99,27 +114,27 @@ class GoldBacktest:
 
         self._isolate()
         # Modules jinka clock freeze karna hai (jinme `from datetime import datetime`)
-        freeze_modules = [self._gh, kill_zones]
+        freeze_modules = [self._gh, kill_zones] + list(self.freeze_extra)
         try:
             from strategies import silver_bullet as _sb
             freeze_modules.append(_sb)
         except Exception:
             pass
 
-        m15 = self.frames["M15"]
-        n = len(m15)
+        step_df = self.frames[self.step_tf]
+        n = len(step_df)
         open_until = None   # trade band hone tak ka time — overlap avoid
+        fill_mins = self._TF_MINS.get(self.fill_tf, 5)
 
         try:
             for i in range(self.warmup, n):
-                row = m15.iloc[i]
-                t = row["time"]
+                t = step_df.iloc[i]["time"]
 
                 if open_until is not None and t <= open_until:
                     continue   # abhi ek trade chal rahi hai
 
                 sliced = {tf: _slice_upto(df, t) for tf, df in self.frames.items()}
-                if len(sliced.get("M15", [])) < 40 or len(sliced.get("M5", [])) < 10:
+                if len(sliced.get("M5", [])) < 10:
                     continue
 
                 strat = self.strategy_fn or self._gh.generate_gold_signal
@@ -150,10 +165,16 @@ class GoldBacktest:
                     lot=result.get("lot", 0.01), entry_time=t,
                     comment=result.get("comment", ""), confidence=conf.confidence,
                 )
-                future = self._future_m5(t)
+                # Live config ka time-stop reflect karo (fill_tf bars = mins/fill_mins)
+                import config as _cfg
+                mh = getattr(_cfg, "MAX_HOLD_MINUTES", 0)
+                max_hold = int(mh / fill_mins) if mh else None
+                # Time-stop hai to sirf utne (+margin) fill bars chahiye — speed-up
+                cap = (max_hold + 5) if max_hold else None
+                future = self._future_fill(t, cap=cap)
                 if not future:
                     break
-                simulate_trade(tr, future)
+                simulate_trade(tr, future, max_hold_bars=max_hold)
                 self.trades.append(tr)
                 open_until = tr.exit_time
         finally:

@@ -73,7 +73,7 @@ def test_injected_strategy_produces_trade():
     assert stats.trades == 1, f"expected 1 trade, got {stats.trades}"
     tr = bt.trades[0]
     assert tr.direction == "BUY"
-    assert tr.exit_reason in ("TP", "BE", "SL", "TP1_TRAIL", "EOD"), tr.exit_reason
+    assert tr.exit_reason in ("TP", "BE", "SL", "TP1_TRAIL", "EOD", "TIME"), tr.exit_reason
     print(f"test_injected_strategy_produces_trade OK — "
           f"exit={tr.exit_reason} r={tr.r_multiple:+.2f} conf={tr.confidence:.0f}%")
     print("   " + stats.summary().replace("\n", " | "))

@@ -87,16 +87,28 @@ def _manage_trade(pos):
     symbol  = pos.symbol
     is_buy  = pos.type == mt5.ORDER_TYPE_BUY
 
+    # ── Time-based exit (scalp): max hold cross → force close ──
+    max_hold = getattr(config, "MAX_HOLD_MINUTES", 0)
+    if max_hold and pos.time:
+        age_min = (datetime.now(timezone.utc).timestamp() - pos.time) / 60.0
+        if age_min >= max_hold:
+            log_event("INFO",
+                f"[{symbol}][{ticket}] Max hold {max_hold}min reached "
+                f"(age {age_min:.0f}min) — force close. P&L:{pos.profit:.2f}")
+            _close_position(pos)
+            return
+
     sl_size = (entry - sl) if is_buy else (sl - entry)
     if sl_size <= 0: return
 
     profit_pts = (current - entry) if is_buy else (entry - current)
 
-    partial_trigger = sl_size * config.PARTIAL_CLOSE_RR
-    if ticket not in _partial_done and profit_pts >= partial_trigger:
-        _do_partial_close(pos, symbol, ticket)
-        _partial_done.add(ticket)
-        return
+    if getattr(config, "PARTIAL_CLOSE_ENABLED", True):
+        partial_trigger = sl_size * config.PARTIAL_CLOSE_RR
+        if ticket not in _partial_done and profit_pts >= partial_trigger:
+            _do_partial_close(pos, symbol, ticket)
+            _partial_done.add(ticket)
+            return
 
     info = mt5.symbol_info(symbol)
     digits = info.digits if info else 5
