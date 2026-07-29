@@ -93,14 +93,25 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None) -> SimTrade
         best_price = hi if is_buy else lo
         fav_r = ((best_price - entry) if is_buy else (entry - best_price)) / risk
 
-        sl_touched = (lo <= sl <= hi)
-        tp_touched = (lo <= tp <= hi)
+        # SL/TP "reached" logic (bracket nahi) — warna price ek bar mein
+        # level ke PAAR gap kar jaye to detection miss ho jati thi aur
+        # loss -1R se bara ban jata tha. Ab direction-aware:
+        bar_open = bar.get("open", sl)   # test bars mein open na ho to sl pe fill
+        if is_buy:
+            sl_touched = lo <= sl     # price sl tak ya neeche gayi
+            tp_touched = hi >= tp     # price tp tak ya upar gayi
+            sl_fill = min(sl, bar_open)   # gap-through → open pe fill (worse)
+        else:
+            sl_touched = hi >= sl
+            tp_touched = lo <= tp
+            sl_fill = max(sl, bar_open)
 
         # ── 1. SL check first (conservative: SL priority if both touch) ──
         #    SL valid at bar START is used; trailing updates apply to NEXT bar.
         if sl_touched:
-            exit_r = ((sl - entry) / risk) if is_buy else ((entry - sl) / risk)
-            trade.exit = sl
+            exit_px = sl_fill
+            exit_r = ((exit_px - entry) / risk) if is_buy else ((entry - exit_px) / risk)
+            trade.exit = exit_px
             trade.exit_time = t
             trade.exit_reason = "BE" if moved_be and abs(sl - entry) < 1e-9 else \
                                 ("TP1_TRAIL" if moved_tp1 else "SL")

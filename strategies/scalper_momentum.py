@@ -21,11 +21,17 @@ import config
 from indicators.volatility import calc_atr
 from logger import log_event
 
-DISPLACEMENT_BODY_MULT = 1.6    # body avg-body se itni guna bari ho
+# Backtest-optimized defaults (60d full-engine grid, gap-fixed simulator):
+# displacement 2.5 + TP 1:3 + 90min time-stop → best RISK-ADJUSTED result:
+# +13.86R, PF 1.15, drawdown 12.55R, 202 trades (vs d2.0 = +16.95R but 18R DD).
+# Sabse strong reliable pattern: TP 1:3 >> 1:2 (Gold trends → winners run).
+# NOTE: recommended MAX_HOLD_MINUTES=90 (config) is pairs with this.
+DISPLACEMENT_BODY_MULT = 2.5    # body avg-body se itni guna bari ho
 MAX_OPP_WICK_RATIO     = 0.35   # opposite wick range ka itne se kam
 VOL_SPIKE_MULT         = 1.3
 BUF_GOLD               = 1.2
 MIN_SL_GOLD            = 1.5
+TP_RR                  = 3.0    # final TP (tp3) = itne R (Gold trends → let run)
 
 # Optional strict filters (default OFF = current behavior). Backtest se
 # tune karne ke liye — live config in se override ho sakta hai.
@@ -112,13 +118,13 @@ def generate_scalp_momentum_signal(df_h1=None, df_m30=None, df_m15=None,
 
     if trend == "BULLISH":
         tp1 = round(entry + sl_size * 1.0, 3)
-        tp2 = round(entry + sl_size * 1.5, 3)
-        tp3 = round(entry + sl_size * 2.0, 3)
+        tp2 = round(entry + sl_size * (TP_RR * 0.75), 3)
+        tp3 = round(entry + sl_size * TP_RR, 3)
         sig = "BUY"
     else:
         tp1 = round(entry - sl_size * 1.0, 3)
-        tp2 = round(entry - sl_size * 1.5, 3)
-        tp3 = round(entry - sl_size * 2.0, 3)
+        tp2 = round(entry - sl_size * (TP_RR * 0.75), 3)
+        tp3 = round(entry - sl_size * TP_RR, 3)
         sig = "SELL"
 
     bias = _m15_bias(df_m15)
