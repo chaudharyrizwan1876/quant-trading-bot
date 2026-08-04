@@ -48,7 +48,8 @@ class GoldBacktest:
 
     def __init__(self, symbol, frames, point=0.001,
                  confidence_gate=True, warmup_m15=120, strategy_fn=None,
-                 step_tf="M15", fill_tf="M5", freeze_extra=None):
+                 step_tf="M15", fill_tf="M5", freeze_extra=None,
+                 start_ts=None, end_ts=None):
         self.symbol = symbol
         self.frames = frames
         self.point = point
@@ -60,6 +61,10 @@ class GoldBacktest:
         self.step_tf = step_tf
         self.fill_tf = fill_tf
         self.freeze_extra = freeze_extra or []   # scalper modules to clock-freeze
+        # Train/test split: sirf is window ke bars pe signal generate ho
+        # (history poori rehti hai — warmup/context ke liye). Overfit check.
+        self.start_ts = start_ts
+        self.end_ts = end_ts
         self.trades = []
 
     # ── side-effect isolation ──
@@ -129,6 +134,11 @@ class GoldBacktest:
         try:
             for i in range(self.warmup, n):
                 t = step_df.iloc[i]["time"]
+
+                if self.start_ts is not None and t < self.start_ts:
+                    continue
+                if self.end_ts is not None and t > self.end_ts:
+                    break
 
                 if open_until is not None and t <= open_until:
                     continue   # abhi ek trade chal rahi hai

@@ -21,17 +21,19 @@ import config
 from indicators.volatility import calc_atr
 from logger import log_event
 
-# Backtest-optimized defaults (60d full-engine grid, gap-fixed simulator):
-# displacement 2.5 + TP 1:3 + 90min time-stop → best RISK-ADJUSTED result:
-# +13.86R, PF 1.15, drawdown 12.55R, 202 trades (vs d2.0 = +16.95R but 18R DD).
-# Sabse strong reliable pattern: TP 1:3 >> 1:2 (Gold trends → winners run).
-# NOTE: recommended MAX_HOLD_MINUTES=90 (config) is pairs with this.
+# Backtest-optimized defaults. TP_RR=4.0 validated on 6mo train/test split
+# (Feb-Jun optimize / Jun-Aug validate): improves BOTH periods vs TP3
+# (train -0.3R→+4.4R, test +7.2R→+17.8R PF1.19, full-6mo +7R→+22R). Higher
+# TP is regime-robust here because SL locks +1R at 2R profit — reversing
+# trades pay the same either way, so a far TP only harvests full trend runs
+# (asymmetric: loss capped 1R, winners ~4R). WR stays ~35% across TP values.
+# CAVEAT: edge is modest & regime-dependent (train PF ~1.02) — demo only.
 DISPLACEMENT_BODY_MULT = 2.5    # body avg-body se itni guna bari ho
 MAX_OPP_WICK_RATIO     = 0.35   # opposite wick range ka itne se kam
 VOL_SPIKE_MULT         = 1.3
 BUF_GOLD               = 1.2
 MIN_SL_GOLD            = 1.5
-TP_RR                  = 3.0    # final TP (tp3) = itne R (Gold trends → let run)
+TP_RR                  = 4.0    # final TP (tp3) = itne R (6mo-validated)
 
 # Optional strict filters (default OFF = current behavior). Backtest se
 # tune karne ke liye — live config in se override ho sakta hai.
