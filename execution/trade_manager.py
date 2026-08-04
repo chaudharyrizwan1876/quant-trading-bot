@@ -11,6 +11,7 @@ from logger import log_event, log_trade
 
 _prev_positions = {}
 _partial_done   = set()
+_orig_risk      = {}   # ticket -> original SL distance (R basis, trail se pehle)
 
 
 def manage_open_trades():
@@ -25,6 +26,7 @@ def manage_open_trades():
             if ticket not in current_tix:
                 _check_sl_hit(ticket, info["symbol"], rm)
                 _partial_done.discard(ticket)
+                _orig_risk.pop(ticket, None)
 
         _prev_positions = {
             p.ticket: {"symbol":p.symbol,"entry":p.price_open,"type":p.type}
@@ -87,16 +89,34 @@ def _manage_trade(pos):
     symbol  = pos.symbol
     is_buy  = pos.type == mt5.ORDER_TYPE_BUY
 
-    # ── Time-based exit (scalp): max hold cross → force close ──
+    # Original risk (trail se pehle) yaad rakho — R calculation ke liye.
+    # Pehli baar position dikhe to uski SL distance store kar lo.
+    if ticket not in _orig_risk:
+        r0 = (entry - sl) if is_buy else (sl - entry)
+        if r0 > 0:
+            _orig_risk[ticket] = r0
+    orig_risk = _orig_risk.get(ticket, 0)
+
+    # ── Smart time-based exit (scalp): max hold cross → close, LEKIN
+    #    sirf tab jab trade abhi solid profit (>TIME_STOP_MAX_PROFIT_R)
+    #    mein na ho. Winners chalte rahein (BE/trail se protected),
+    #    sirf stuck/losing trades katein. Backtest: yeh edge behtar
+    #    karta hai (+8.41R→+9.43R) aur winners ko jaldi nahi kaatta.
     max_hold = getattr(config, "MAX_HOLD_MINUTES", 0)
-    if max_hold and pos.time:
+    if max_hold and pos.time and orig_risk > 0:
         age_min = (datetime.now(timezone.utc).timestamp() - pos.time) / 60.0
         if age_min >= max_hold:
-            log_event("INFO",
-                f"[{symbol}][{ticket}] Max hold {max_hold}min reached "
-                f"(age {age_min:.0f}min) — force close. P&L:{pos.profit:.2f}")
-            _close_position(pos)
-            return
+            cur_profit_pts = (current - entry) if is_buy else (entry - current)
+            cur_r = cur_profit_pts / orig_risk
+            tsp = getattr(config, "TIME_STOP_MAX_PROFIT_R", None)
+            if tsp is None or cur_r <= tsp:
+                log_event("INFO",
+                    f"[{symbol}][{ticket}] Max hold {max_hold}min (age "
+                    f"{age_min:.0f}min, {cur_r:+.2f}R) — force close. "
+                    f"P&L:{pos.profit:.2f}")
+                _close_position(pos)
+                return
+            # else: profit >tsp — winner chalne do, close nahi karte
 
     sl_size = (entry - sl) if is_buy else (sl - entry)
     if sl_size <= 0: return

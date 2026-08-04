@@ -170,11 +170,21 @@ class GoldBacktest:
                 mh = getattr(_cfg, "MAX_HOLD_MINUTES", 0)
                 max_hold = int(mh / fill_mins) if mh else None
                 # Time-stop hai to sirf utne (+margin) fill bars chahiye — speed-up
-                cap = (max_hold + 5) if max_hold else None
+                tsp = getattr(_cfg, "TIME_STOP_MAX_PROFIT_R", None)
+                # Hard time-stop → sirf utna window chahiye. Smart time-stop
+                # (tsp set) → winner max_hold ke baad bhi chal sakta hai, is
+                # liye wider window (warna winner jaldi cut ho jayega).
+                if not max_hold:
+                    cap = None
+                elif tsp is None:
+                    cap = max_hold + 5
+                else:
+                    cap = max(max_hold, 600) + 5   # ~10h M1 — winner ko room
                 future = self._future_fill(t, cap=cap)
                 if not future:
                     break
-                simulate_trade(tr, future, max_hold_bars=max_hold)
+                simulate_trade(tr, future, max_hold_bars=max_hold,
+                               time_stop_max_profit_r=tsp)
                 self.trades.append(tr)
                 open_until = tr.exit_time
         finally:

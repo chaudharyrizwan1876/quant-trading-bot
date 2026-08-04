@@ -26,4 +26,5 @@ SYMBOL_ICT  = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
 # MAX_OPEN_TRADES            = 3       # global open-position cap
 # PARTIAL_CLOSE_ENABLED      = False   # backtest: aggressive partial hurt edge
 # MAX_HOLD_MINUTES           = 90      # scalp: itne min baad force-close (0=off)
+# TIME_STOP_MAX_PROFIT_R     = 1.0     # time-stop sirf tab jab profit < is R (winners run)
 # STRATEGY_MODE              = "momentum"  # "momentum" (scalper) ya "swing" (old stack)
