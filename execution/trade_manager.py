@@ -12,6 +12,7 @@ from logger import log_event, log_trade
 _prev_positions = {}
 _partial_done   = set()
 _orig_risk      = {}   # ticket -> original SL distance (R basis, trail se pehle)
+_max_fav        = {}   # ticket -> max favorable excursion (R) — progressive trail
 
 
 def manage_open_trades():
@@ -27,6 +28,7 @@ def manage_open_trades():
                 _check_sl_hit(ticket, info["symbol"], rm)
                 _partial_done.discard(ticket)
                 _orig_risk.pop(ticket, None)
+                _max_fav.pop(ticket, None)
 
         _prev_positions = {
             p.ticket: {"symbol":p.symbol,"entry":p.price_open,"type":p.type}
@@ -133,17 +135,45 @@ def _manage_trade(pos):
     info = mt5.symbol_info(symbol)
     digits = info.digits if info else 5
 
+    cur_r = profit_pts / orig_risk if orig_risk > 0 else 0
+    _max_fav[ticket] = max(_max_fav.get(ticket, 0.0), cur_r)
+    max_fav = _max_fav[ticket]
+
     new_sl = None
-    if profit_pts >= sl_size * 2.0:
-        tp1_level = round(entry + sl_size if is_buy else entry - sl_size, digits)
-        if (is_buy and sl < tp1_level) or (not is_buy and sl > tp1_level):
-            new_sl = tp1_level
-            log_event("INFO", f"[{symbol}][{ticket}] 1:2 — SL→TP1 {new_sl}")
-    elif profit_pts >= sl_size:
-        be = round(entry, digits)
-        if (is_buy and sl < be) or (not is_buy and sl > be):
-            new_sl = be
-            log_event("INFO", f"[{symbol}][{ticket}] 1:1 — BE {new_sl}")
+    trail_mode = getattr(config, "TRAIL_MODE", None)
+
+    if trail_mode == "giveback" and orig_risk > 0:
+        # ── Progressive trend-rider trail: peak favorable se GIVEBACK_R
+        #    neeche SL trail (activate hone ke baad). Bara trend ride hota
+        #    hai. Backtest (6mo): full +22R→+39R, bade winners capture.
+        act  = getattr(config, "TRAIL_ACTIVATE_R", 3.0)
+        give = getattr(config, "TRAIL_GIVEBACK_R", 1.5)
+        if max_fav >= act:
+            lvl_r  = max(max_fav - give, 0.0)
+            cand   = round(entry + lvl_r * orig_risk if is_buy
+                           else entry - lvl_r * orig_risk, digits)
+            if (is_buy and cand > sl) or (not is_buy and cand < sl):
+                new_sl = cand
+                log_event("INFO",
+                    f"[{symbol}][{ticket}] TRAIL peak{max_fav:.1f}R → "
+                    f"SL {new_sl} (lock {lvl_r:.1f}R)")
+        elif max_fav >= 1.0:
+            be = round(entry, digits)
+            if (is_buy and sl < be) or (not is_buy and sl > be):
+                new_sl = be
+                log_event("INFO", f"[{symbol}][{ticket}] 1:1 — BE {new_sl}")
+    else:
+        # ── Legacy fixed scalp trail (2R → lock 1R, 1R → BE) ──
+        if profit_pts >= sl_size * 2.0:
+            tp1_level = round(entry + sl_size if is_buy else entry - sl_size, digits)
+            if (is_buy and sl < tp1_level) or (not is_buy and sl > tp1_level):
+                new_sl = tp1_level
+                log_event("INFO", f"[{symbol}][{ticket}] 1:2 — SL→TP1 {new_sl}")
+        elif profit_pts >= sl_size:
+            be = round(entry, digits)
+            if (is_buy and sl < be) or (not is_buy and sl > be):
+                new_sl = be
+                log_event("INFO", f"[{symbol}][{ticket}] 1:1 — BE {new_sl}")
 
     if new_sl is not None:
         _move_sl(ticket, new_sl, tp)

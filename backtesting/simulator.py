@@ -86,6 +86,15 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None,
     moved_be = False
     moved_tp1 = False
 
+    # Progressive "give-back" trailing (trend rider). TRAIL_MODE="giveback"
+    # → jaise price chale, SL peak favorable se GIVEBACK_R neeche trail hoti
+    # hai (activate hone ke baad). Isse bara trend ride hota hai — fixed 1R
+    # lock ki jagah. None = purana fixed BE/1R-lock behavior.
+    trail_mode = getattr(config, "TRAIL_MODE", None)
+    trail_act  = getattr(config, "TRAIL_ACTIVATE_R", 2.0)
+    trail_give = getattr(config, "TRAIL_GIVEBACK_R", 1.0)
+    max_fav_r = 0.0
+
     for bar_i, bar in enumerate(future_bars):
         hi, lo = bar["high"], bar["low"]
         t = bar["time"]
@@ -93,6 +102,8 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None,
         # Best favorable price this bar → favorable excursion in R.
         best_price = hi if is_buy else lo
         fav_r = ((best_price - entry) if is_buy else (entry - best_price)) / risk
+        if fav_r > max_fav_r:
+            max_fav_r = fav_r
 
         # SL/TP "reached" logic (bracket nahi) — warna price ek bar mein
         # level ke PAAR gap kar jaye to detection miss ho jati thi aur
@@ -134,14 +145,28 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None,
             trade.r_multiple = trade.realized_r + exit_r * trade.remaining
             return trade
 
-        # ── 4. Trailing SL logic (mirror trade_manager._manage_trade) ──
-        if fav_r >= 2.0 and not moved_tp1:
-            sl = entry + risk if is_buy else entry - risk   # SL → TP1 (entry + 1R)
-            moved_tp1 = True
-            moved_be = True
-        elif fav_r >= 1.0 and not moved_be:
-            sl = entry            # break-even
-            moved_be = True
+        # ── 4. Trailing SL logic ──
+        if trail_mode == "giveback":
+            # Progressive trail: peak favorable se GIVEBACK_R neeche lock.
+            if max_fav_r >= trail_act:
+                lvl_r = max(max_fav_r - trail_give, 0.0)
+                new_sl = (entry + lvl_r * risk) if is_buy else (entry - lvl_r * risk)
+                if (is_buy and new_sl > sl) or (not is_buy and new_sl < sl):
+                    sl = new_sl
+                    moved_be = True
+                    moved_tp1 = True
+            elif max_fav_r >= 1.0 and not moved_be:
+                sl = entry            # break-even floor
+                moved_be = True
+        else:
+            # Fixed (scalp) trail — mirror trade_manager._manage_trade
+            if fav_r >= 2.0 and not moved_tp1:
+                sl = entry + risk if is_buy else entry - risk   # SL → TP1 (entry + 1R)
+                moved_tp1 = True
+                moved_be = True
+            elif fav_r >= 1.0 and not moved_be:
+                sl = entry            # break-even
+                moved_be = True
 
         # ── 5. Time-based exit (scalp) — max hold cross ho gaya ──
         #    Smart time-stop: agar trade abhi profit mein hai (cur_r >

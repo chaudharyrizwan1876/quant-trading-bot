@@ -27,4 +27,7 @@ SYMBOL_ICT  = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
 # PARTIAL_CLOSE_ENABLED      = False   # backtest: aggressive partial hurt edge
 # MAX_HOLD_MINUTES           = 90      # scalp: itne min baad force-close (0=off)
 # TIME_STOP_MAX_PROFIT_R     = 1.0     # time-stop sirf tab jab profit < is R (winners run)
+# TRAIL_MODE                 = "giveback"  # trend-rider trail (None = fixed scalp trail)
+# TRAIL_ACTIVATE_R           = 3.0     # itne R ke baad trailing shuru
+# TRAIL_GIVEBACK_R           = 1.5     # peak se itna R deke exit (trend ride)
 # STRATEGY_MODE              = "momentum"  # "momentum" (scalper) ya "swing" (old stack)

@@ -33,7 +33,10 @@ MAX_OPP_WICK_RATIO     = 0.35   # opposite wick range ka itne se kam
 VOL_SPIKE_MULT         = 1.3
 BUF_GOLD               = 1.2
 MIN_SL_GOLD            = 1.5
-TP_RR                  = 4.0    # final TP (tp3) = itne R (6mo-validated)
+# TP ab door ka safety ceiling hai — asal exit progressive TRAIL karti
+# hai (config.TRAIL_MODE="giveback"). Trail bade trend ride karti hai,
+# tp3 sirf ek hard cap. Backtest 6mo: trailing ne full +22R→+39R kiya.
+TP_RR                  = 20.0   # far TP ceiling (trail decides exit)
 
 # Optional strict filters (default OFF = current behavior). Backtest se
 # tune karne ke liye — live config in se override ho sakta hai.
