@@ -178,6 +178,61 @@ def _manage_trade(pos):
     if new_sl is not None:
         _move_sl(ticket, new_sl, tp)
 
+    if getattr(config, "STRUCTURE_EXIT_ENABLED", False) and orig_risk > 0:
+        act = getattr(config, "STRUCTURE_EXIT_ACTIVATE_R", 1.0)
+        if max_fav >= act and _structure_broken(pos, is_buy):
+            log_event("INFO",
+                f"[{symbol}][{ticket}] STRUCTURE BREAK (peak {max_fav:.1f}R) "
+                f"— reversal, close. P&L:{pos.profit:.2f}")
+            _close_position(pos)
+            return
+
+
+def _structure_broken(pos, is_buy):
+    """Entry ke baad bana sabse recent confirmed swing point todha gaya?
+    Sell trade: last swing HIGH ke upar candle close hui → reversal.
+    Buy trade: last swing LOW ke neeche candle close hui → reversal."""
+    from market_data import mt5_connector as mdc
+
+    tf      = getattr(config, "STRUCTURE_EXIT_TIMEFRAME", "M5")
+    count   = getattr(config, "STRUCTURE_EXIT_CANDLES", 100)
+    side_n  = getattr(config, "STRUCTURE_EXIT_FRACTAL_SIDE", 2)
+
+    df = mdc.get_candles(tf, count, pos.symbol)
+    if df is None or len(df) < (side_n * 2 + 3):
+        return False
+
+    entry_time = pos.time
+    df["epoch"] = df["time"].astype("int64") // 10**9
+
+    # Sirf fully closed candles (last row = abhi bhi ban rahi hai).
+    closed = df.iloc[:-1]
+    last_closed = closed.iloc[-1]
+
+    fractals = []
+    n = len(closed)
+    for i in range(side_n, n - side_n):
+        row = closed.iloc[i]
+        if row["epoch"] < entry_time:
+            continue
+        window_lo = closed.iloc[i - side_n:i]
+        window_hi = closed.iloc[i + 1:i + 1 + side_n]
+        if is_buy:
+            if row["low"] < window_lo["low"].min() and row["low"] < window_hi["low"].min():
+                fractals.append(row["low"])
+        else:
+            if row["high"] > window_lo["high"].max() and row["high"] > window_hi["high"].max():
+                fractals.append(row["high"])
+
+    if not fractals:
+        return False
+
+    level = fractals[-1]
+    if is_buy:
+        return last_closed["close"] < level
+    else:
+        return last_closed["close"] > level
+
 
 def _do_partial_close(pos, symbol, ticket):
     info = mt5.symbol_info(symbol)

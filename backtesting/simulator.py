@@ -95,6 +95,14 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None,
     trail_give = getattr(config, "TRAIL_GIVEBACK_R", 1.0)
     max_fav_r = 0.0
 
+    # Structure-break exit: entry ke baad bane confirmed swing (fractal)
+    # todhe jaane par turant close — mirrors trade_manager._structure_broken.
+    struct_on   = getattr(config, "STRUCTURE_EXIT_ENABLED", False)
+    struct_act  = getattr(config, "STRUCTURE_EXIT_ACTIVATE_R", 2.0)
+    struct_side = getattr(config, "STRUCTURE_EXIT_FRACTAL_SIDE", 2)
+    bars_seen = []
+    fractal_level = None
+
     for bar_i, bar in enumerate(future_bars):
         hi, lo = bar["high"], bar["low"]
         t = bar["time"]
@@ -144,6 +152,36 @@ def simulate_trade(trade: SimTrade, future_bars, max_hold_bars=None,
             trade.exit_reason = "TP"
             trade.r_multiple = trade.realized_r + exit_r * trade.remaining
             return trade
+
+        # ── 3b. Structure-break exit — confirmed swing todha gaya ──
+        if struct_on and max_fav_r >= struct_act and fractal_level is not None:
+            broken = (bar["close"] < fractal_level) if is_buy \
+                     else (bar["close"] > fractal_level)
+            if broken:
+                exit_px = bar["close"]
+                exit_r = ((exit_px - entry) / risk) if is_buy else ((entry - exit_px) / risk)
+                trade.exit = exit_px
+                trade.exit_time = t
+                trade.exit_reason = "STRUCTURE"
+                trade.r_multiple = trade.realized_r + exit_r * trade.remaining
+                return trade
+
+        # ── update swing/fractal tracking for next bars ──
+        if struct_on:
+            bars_seen.append(bar)
+            j = len(bars_seen) - 1 - struct_side
+            if j >= struct_side:
+                window_lo = bars_seen[j - struct_side:j]
+                window_hi = bars_seen[j + 1:j + 1 + struct_side]
+                row = bars_seen[j]
+                if is_buy:
+                    if row["low"] < min(b["low"] for b in window_lo) and \
+                       row["low"] < min(b["low"] for b in window_hi):
+                        fractal_level = row["low"]
+                else:
+                    if row["high"] > max(b["high"] for b in window_lo) and \
+                       row["high"] > max(b["high"] for b in window_hi):
+                        fractal_level = row["high"]
 
         # ── 4. Trailing SL logic ──
         if trail_mode == "giveback":
