@@ -13,11 +13,41 @@
 #  continuation entry trigger hai.
 # ============================================================
 
+from datetime import datetime, timezone
 import config
+from indicators.volatility import calc_atr
 from logger import log_event
 
 BUF_GOLD  = 1.2
 TP_RR     = 20.0   # far ceiling — asal exit trail_mode se hota hai (trade_manager)
+
+# Strict-mode filters (default OFF = original loose behavior). In se
+# structure-continuation ki frequency bohot kam ho jati hai — sirf
+# genuine bare moves pe fire karta hai, chhoti/weak pullbacks pe nahi.
+# Backtest se tune kiya gaya (90d/180d — loose version quality dilute
+# karta tha: expectancy/PF baseline se neeche chala jata tha).
+REQUIRE_MIN_SWING   = True
+MIN_SWING_ATR_MULT  = 1.5   # structure amplitude (H2-L2) >= ATR * yeh
+REQUIRE_SESSION     = True   # sirf London/NY prime session
+REQUIRE_H1_ALIGN    = True   # H1 bias bhi trend ke saath aligned ho
+
+
+def _bias(df, tail_n=10) -> str:
+    if df is None or len(df) < tail_n + 2:
+        return "NONE"
+    closed = df.iloc[:-1]
+    ema = closed["close"].tail(tail_n).mean()
+    last = closed.iloc[-1]["close"]
+    if last > ema:
+        return "BULLISH"
+    if last < ema:
+        return "BEARISH"
+    return "NONE"
+
+
+def _in_session() -> bool:
+    h = datetime.now(timezone.utc).hour
+    return (config.KILL_ZONE_LONDON_START <= h < config.KILL_ZONE_NY_END)
 
 
 def _no_trade(symbol=""):
@@ -82,6 +112,7 @@ def generate_structure_signal(df_h1=None, df_m30=None, df_m15=None, df_m5=None,
     sig = None
     entry = sl = None
 
+    swing_amp = None
     if types == ("H", "L", "H", "L"):
         # H1, L1, H2(HH), L2(HL) — continuation break above H2
         h1, l1, h2, l2 = p1, p2, p3, p4
@@ -89,6 +120,7 @@ def generate_structure_signal(df_h1=None, df_m30=None, df_m15=None, df_m5=None,
             sig = "BUY"
             entry = last_close
             sl = l2[2] - BUF_GOLD
+            swing_amp = h2[2] - l2[2]
 
     elif types == ("L", "H", "L", "H"):
         # L1, H1, L2(LL), H2(LH) — continuation break below L2
@@ -97,9 +129,23 @@ def generate_structure_signal(df_h1=None, df_m30=None, df_m15=None, df_m5=None,
             sig = "SELL"
             entry = last_close
             sl = h2[2] + BUF_GOLD
+            swing_amp = h2[2] - l2[2]
 
     if sig is None:
         return _no_trade(symbol)
+
+    # ── Strict-mode filters — noise/weak-pullback continuation cut ──
+    if REQUIRE_MIN_SWING:
+        atr = calc_atr(df.iloc[:-1], period=14)
+        if atr <= 0 or swing_amp < atr * MIN_SWING_ATR_MULT:
+            return _no_trade(symbol)
+    if REQUIRE_SESSION and not _in_session():
+        return _no_trade(symbol)
+    if REQUIRE_H1_ALIGN:
+        h1_bias = _bias(df_h1)
+        wanted = "BULLISH" if sig == "BUY" else "BEARISH"
+        if h1_bias != wanted:
+            return _no_trade(symbol)
 
     sl_size = (entry - sl) if sig == "BUY" else (sl - entry)
     if sl_size <= 0:
