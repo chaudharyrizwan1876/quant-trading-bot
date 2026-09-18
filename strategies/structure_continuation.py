@@ -25,18 +25,26 @@ def _no_trade(symbol=""):
             "tp1": 0, "tp2": 0, "tp3": 0, "comment": "", "score": 0, "factors": {}}
 
 
+_LOOKBACK = 200   # sirf recent bars kaafi hain last few pivots ke liye — poori
+                  # (growing) history scan karna backtest mein O(n^2) bana deta tha
+
+
 def _zigzag(df, side_n):
-    """Confirmed fractal highs/lows ko strict-alternating zigzag mein reduce karta hai."""
-    closed = df.iloc[:-1].reset_index(drop=True)
+    """Confirmed fractal highs/lows ko strict-alternating zigzag mein reduce karta hai.
+    Numpy arrays par (pandas .iloc row-loop nahi — bohot slow hota hai)."""
+    closed = df.iloc[:-1].tail(_LOOKBACK).reset_index(drop=True)
     n = len(closed)
+    highs = closed["high"].to_numpy()
+    lows  = closed["low"].to_numpy()
+
     raw = []
     for i in range(side_n, n - side_n):
-        row = closed.iloc[i]
-        window = closed.iloc[i - side_n:i + side_n + 1]
-        if row["high"] >= window["high"].max() and (window["high"] == row["high"]).sum() == 1:
-            raw.append((i, "H", row["high"]))
-        elif row["low"] <= window["low"].min() and (window["low"] == row["low"]).sum() == 1:
-            raw.append((i, "L", row["low"]))
+        w_hi = highs[i - side_n:i + side_n + 1]
+        w_lo = lows[i - side_n:i + side_n + 1]
+        if highs[i] >= w_hi.max() and (w_hi == highs[i]).sum() == 1:
+            raw.append((i, "H", highs[i]))
+        elif lows[i] <= w_lo.min() and (w_lo == lows[i]).sum() == 1:
+            raw.append((i, "L", lows[i]))
 
     zz = []
     for p in raw:
