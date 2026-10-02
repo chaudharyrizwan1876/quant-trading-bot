@@ -5,6 +5,8 @@
 #  hoti hai agar min_lot pe bhi risk zyada bane).
 # ============================================================
 
+import utils.transport
+import utils.session
 import time
 import config
 from market_data import mt5_connector as mt5c
