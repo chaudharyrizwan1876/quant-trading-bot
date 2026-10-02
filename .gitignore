@@ -29,7 +29,6 @@ Thumbs.db
 desktop.ini
 
 # --- Editor/IDE settings ---
-.vscode/
 .idea/
 *.swp
 
@@ -37,3 +36,5 @@ desktop.ini
 trade_memory.json
 data/trade_memory.json
 data/news_cache.json
+config.bat
+node_modules

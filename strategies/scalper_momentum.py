@@ -97,7 +97,13 @@ def _forming_m5_bucket(df_m1):
         return None
     now = datetime.now(timezone.utc)
     bucket_start = now.replace(minute=(now.minute // 5) * 5, second=0, microsecond=0)
-    bucket = m1_closed[m1_closed["time"] >= bucket_start]
+    times = m1_closed["time"]
+    # Live mt5_connector.get_candles naive timestamps deta hai (utc=True
+    # nahi), backtest cache tz-aware — dono ke saath compare match karo
+    # warna "Invalid comparison between dtype=datetime64[s] and datetime".
+    if getattr(times.dt, "tz", None) is None:
+        bucket_start = bucket_start.replace(tzinfo=None)
+    bucket = m1_closed[times >= bucket_start]
     if len(bucket) < EARLY_TRIGGER_MIN_M1:
         return None
     return {
